@@ -3,6 +3,7 @@ import logging
 import time
 
 from confluent_kafka import Message
+from opentelemetry.trace import SpanKind
 
 from app.application.use_cases.process_risk_analysis_use_case import (
     ProcessRiskAnalysisUseCase,
@@ -19,6 +20,18 @@ from app.infrastructure.messaging.kafka_consumer_adapter import (
     KafkaConsumerAdapter,
 )
 from app.infrastructure.messaging.retry_router import RetryBackoffCalculator
+from app.infrastructure.observability.logging import (
+    clear_log_context,
+    set_log_context,
+)
+from app.infrastructure.observability.metrics import (
+    CONSUMER_PROCESSING_DURATION_SECONDS,
+    KAFKA_MESSAGES_CONSUMED_TOTAL,
+)
+from app.infrastructure.observability.telemetry import (
+    extract_trace_context,
+    get_tracer,
+)
 from app.infrastructure.repositories.mysql_inbox_repository import (
     MySQLInboxRepository,
 )
@@ -28,6 +41,7 @@ from app.infrastructure.repositories.mysql_transaction_repository import (
 
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer()
 
 
 class TransactionConsumerWorker:
@@ -72,88 +86,131 @@ class TransactionConsumerWorker:
 
         Retorna True se processado ou ignorado com sucesso e offset commitado.
         """
+        start_time = time.time()
         headers = self._extract_headers(message)
+        parent_ctx = extract_trace_context(headers)
 
-        try:
-            raw_value = message.value()
-            if isinstance(raw_value, bytes):
-                payload = json.loads(raw_value.decode("utf-8"))
-            elif isinstance(raw_value, str):
-                payload = json.loads(raw_value)
-            else:
-                payload = raw_value
-        except Exception as exc:
-            logger.error("Erro ao desserializar JSON da mensagem: %s", exc)
-            self._handle_poison_pill(message, exc, headers)
-            return True
+        with tracer.start_as_current_span(
+            "kafka.consume.transactions.created.v1",
+            context=parent_ctx,
+            kind=SpanKind.CONSUMER,
+        ):
+            try:
+                raw_value = message.value()
+                if isinstance(raw_value, bytes):
+                    payload = json.loads(raw_value.decode("utf-8"))
+                elif isinstance(raw_value, str):
+                    payload = json.loads(raw_value)
+                else:
+                    payload = raw_value
+            except Exception as exc:
+                logger.error("Erro ao desserializar JSON da mensagem: %s", exc)
+                KAFKA_MESSAGES_CONSUMED_TOTAL.labels(
+                    topic="transactions.created.v1", status="failed"
+                ).inc()
+                self._handle_poison_pill(message, exc, headers)
+                return True
 
-        event_id = headers.get("x-event-id") or payload.get("event_id")
-        if not event_id:
-            logger.error("Mensagem sem 'x-event-id'. Encaminhando para DLQ.")
-            self._handle_poison_pill(message, ValueError("Missing x-event-id"), headers)
-            return True
-
-        transaction_id = payload.get("aggregate_id") or payload.get("data", {}).get(
-            "transaction_id"
-        )
-        retry_count = int(headers.get("x-retry-count", "0"))
-
-        # 1. Barreira de Idempotência do Inbox
-        with self._session_factory() as session:
-            inbox_repo = MySQLInboxRepository(session)
-            acquired = inbox_repo.try_acquire(
-                event_id=event_id, consumer_group=self._consumer_group
+            event_id = headers.get("x-event-id") or payload.get("event_id")
+            transaction_id = payload.get("aggregate_id") or payload.get("data", {}).get(
+                "transaction_id"
             )
-            session.commit()
+            retry_count = int(headers.get("x-retry-count", "0"))
 
-        if not acquired:
-            logger.info(
-                "Mensagem duplicada detectada: %s. Ignorando reexecução.", event_id
-            )
-            self._consumer.commit(message=message, asynchronous=False)
-            return True
-
-        # 2. Execução da Regra de Negócio e Máquina de Estados
-        try:
-            self._use_case.execute(transaction_id=transaction_id, event_id=event_id)
-            # Confirma offset Kafka estritamente APÓS sucesso no banco
-            self._consumer.commit(message=message, asynchronous=False)
-            return True
-
-        except TransientRiskServiceException as exc:
-            logger.warning(
-                "Falha transitória na análise de risco da transação %s (tentativa %s): %s",
-                transaction_id,
-                retry_count,
-                exc,
-            )
-            self._handle_retry_or_dlq(
-                message=message,
-                exc=exc,
-                transaction_id=transaction_id,
+            # Log context
+            set_log_context(
                 event_id=event_id,
-                payload=payload,
-                retry_count=retry_count,
-                headers=headers,
-            )
-            return True
-
-        except (PermanentRiskServiceException, DomainError, Exception) as exc:
-            logger.error(
-                "Falha definitiva ou não recuperável na transação %s: %s",
-                transaction_id,
-                exc,
-            )
-            self._handle_permanent_failure(
-                message=message,
-                exc=exc,
                 transaction_id=transaction_id,
-                event_id=event_id,
-                payload=payload,
                 retry_count=retry_count,
-                headers=headers,
             )
-            return True
+
+            if not event_id:
+                logger.error("Mensagem sem 'x-event-id'. Encaminhando para DLQ.")
+                KAFKA_MESSAGES_CONSUMED_TOTAL.labels(
+                    topic="transactions.created.v1", status="dlq"
+                ).inc()
+                self._handle_poison_pill(
+                    message, ValueError("Missing x-event-id"), headers
+                )
+                clear_log_context()
+                return True
+
+            # 1. Barreira de Idempotência do Inbox
+            with self._session_factory() as session:
+                inbox_repo = MySQLInboxRepository(session)
+                acquired = inbox_repo.try_acquire(
+                    event_id=event_id, consumer_group=self._consumer_group
+                )
+                session.commit()
+
+            if not acquired:
+                logger.info(
+                    "Mensagem duplicada detectada: %s. Ignorando reexecução.", event_id
+                )
+                KAFKA_MESSAGES_CONSUMED_TOTAL.labels(
+                    topic="transactions.created.v1", status="duplicate_skipped"
+                ).inc()
+                self._consumer.commit(message=message, asynchronous=False)
+                clear_log_context()
+                return True
+
+            # 2. Execução da Regra de Negócio e Máquina de Estados
+            try:
+                self._use_case.execute(transaction_id=transaction_id, event_id=event_id)
+                # Confirma offset Kafka estritamente APÓS sucesso no banco
+                self._consumer.commit(message=message, asynchronous=False)
+                KAFKA_MESSAGES_CONSUMED_TOTAL.labels(
+                    topic="transactions.created.v1", status="processed"
+                ).inc()
+                CONSUMER_PROCESSING_DURATION_SECONDS.labels(
+                    topic="transactions.created.v1"
+                ).observe(time.time() - start_time)
+                return True
+
+            except TransientRiskServiceException as exc:
+                logger.warning(
+                    "Falha transitória na análise de risco da transação %s (tentativa %s): %s",
+                    transaction_id,
+                    retry_count,
+                    exc,
+                )
+                self._handle_retry_or_dlq(
+                    message=message,
+                    exc=exc,
+                    transaction_id=transaction_id,
+                    event_id=event_id,
+                    payload=payload,
+                    retry_count=retry_count,
+                    headers=headers,
+                )
+                KAFKA_MESSAGES_CONSUMED_TOTAL.labels(
+                    topic="transactions.created.v1",
+                    status="retried" if retry_count < self._max_retries else "dlq",
+                ).inc()
+                return True
+
+            except (PermanentRiskServiceException, DomainError, Exception) as exc:
+                logger.error(
+                    "Falha definitiva ou não recuperável na transação %s: %s",
+                    transaction_id,
+                    exc,
+                )
+                self._handle_permanent_failure(
+                    message=message,
+                    exc=exc,
+                    transaction_id=transaction_id,
+                    event_id=event_id,
+                    payload=payload,
+                    retry_count=retry_count,
+                    headers=headers,
+                )
+                KAFKA_MESSAGES_CONSUMED_TOTAL.labels(
+                    topic="transactions.created.v1", status="dlq"
+                ).inc()
+                return True
+
+            finally:
+                clear_log_context()
 
     def _handle_retry_or_dlq(
         self,

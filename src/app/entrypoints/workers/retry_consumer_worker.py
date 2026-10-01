@@ -4,6 +4,7 @@ import logging
 import time
 
 from confluent_kafka import Message
+from opentelemetry.trace import SpanKind
 
 from app.application.use_cases.process_risk_analysis_use_case import (
     ProcessRiskAnalysisUseCase,
@@ -20,6 +21,18 @@ from app.infrastructure.messaging.kafka_consumer_adapter import (
     KafkaConsumerAdapter,
 )
 from app.infrastructure.messaging.retry_router import RetryBackoffCalculator
+from app.infrastructure.observability.logging import (
+    clear_log_context,
+    set_log_context,
+)
+from app.infrastructure.observability.metrics import (
+    CONSUMER_PROCESSING_DURATION_SECONDS,
+    KAFKA_MESSAGES_CONSUMED_TOTAL,
+)
+from app.infrastructure.observability.telemetry import (
+    extract_trace_context,
+    get_tracer,
+)
 from app.infrastructure.repositories.mysql_inbox_repository import (
     MySQLInboxRepository,
 )
@@ -29,6 +42,7 @@ from app.infrastructure.repositories.mysql_transaction_repository import (
 
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer()
 
 
 class RetryConsumerWorker:
@@ -70,99 +84,131 @@ class RetryConsumerWorker:
 
     def process_message(self, message: Message) -> bool:
         """Processa a mensagem respeitando o delay do timestamp agendado."""
+        start_time = time.time()
         headers = self._extract_headers(message)
+        parent_ctx = extract_trace_context(headers)
 
-        try:
-            raw_value = message.value()
-            if isinstance(raw_value, bytes):
-                payload = json.loads(raw_value.decode("utf-8"))
-            elif isinstance(raw_value, str):
-                payload = json.loads(raw_value)
-            else:
-                payload = raw_value
-        except Exception as exc:
-            logger.error("Erro ao desserializar JSON na fila de retry: %s", exc)
-            self._handle_permanent_failure(
-                message=message,
-                exc=exc,
-                transaction_id="unknown",
-                event_id=headers.get("x-event-id", "unknown"),
-                payload={"raw": str(message.value())},
-                retry_count=int(headers.get("x-retry-count", "0")),
-                headers=headers,
-                reason="Poison pill no tópico de retry",
-            )
-            return True
-
-        event_id = headers.get("x-event-id") or payload.get("event_id")
-        transaction_id = payload.get("aggregate_id") or payload.get("data", {}).get(
-            "transaction_id"
-        )
-        retry_count = int(headers.get("x-retry-count", "1"))
-        scheduled_retry_str = headers.get("x-next-retry-timestamp")
-
-        # 1. Verificação Temporal: aguarda timestamp agendado
-        if scheduled_retry_str:
+        with tracer.start_as_current_span(
+            "kafka.consume.transactions.retry.v1",
+            context=parent_ctx,
+            kind=SpanKind.CONSUMER,
+        ):
             try:
-                scheduled_time = datetime.fromisoformat(scheduled_retry_str)
-                now = datetime.utcnow()
-                if now < scheduled_time:
-                    wait_seconds = (scheduled_time - now).total_seconds()
-                    if wait_seconds > 0:
-                        logger.info(
-                            "Mensagem de retry da transação %s aguardando %0.2fs até %s",
-                            transaction_id,
-                            wait_seconds,
-                            scheduled_retry_str,
-                        )
-                        time.sleep(min(wait_seconds, 60.0))
+                raw_value = message.value()
+                if isinstance(raw_value, bytes):
+                    payload = json.loads(raw_value.decode("utf-8"))
+                elif isinstance(raw_value, str):
+                    payload = json.loads(raw_value)
+                else:
+                    payload = raw_value
             except Exception as exc:
-                logger.warning("Falha ao analisar x-next-retry-timestamp: %s", exc)
+                logger.error("Erro ao desserializar JSON na fila de retry: %s", exc)
+                KAFKA_MESSAGES_CONSUMED_TOTAL.labels(
+                    topic="transactions.retry.v1", status="failed"
+                ).inc()
+                self._handle_permanent_failure(
+                    message=message,
+                    exc=exc,
+                    transaction_id="unknown",
+                    event_id=headers.get("x-event-id", "unknown"),
+                    payload={"raw": str(message.value())},
+                    retry_count=int(headers.get("x-retry-count", "0")),
+                    headers=headers,
+                    reason="Poison pill no tópico de retry",
+                )
+                return True
 
-        # 2. Execução da análise de risco
-        try:
-            self._use_case.execute(transaction_id=transaction_id, event_id=event_id)
-            self._consumer.commit(message=message, asynchronous=False)
-            logger.info(
-                "Transação %s reprocessada com sucesso na fila de retry.",
-                transaction_id,
+            event_id = headers.get("x-event-id") or payload.get("event_id")
+            transaction_id = payload.get("aggregate_id") or payload.get("data", {}).get(
+                "transaction_id"
             )
-            return True
+            retry_count = int(headers.get("x-retry-count", "1"))
+            scheduled_retry_str = headers.get("x-next-retry-timestamp")
 
-        except TransientRiskServiceException as exc:
-            logger.warning(
-                "Falha transitória persistente no retry da transação %s (tentativa %s): %s",
-                transaction_id,
-                retry_count,
-                exc,
-            )
-            self._handle_retry_or_dlq(
-                message=message,
-                exc=exc,
-                transaction_id=transaction_id,
+            set_log_context(
                 event_id=event_id,
-                payload=payload,
-                retry_count=retry_count,
-                headers=headers,
-            )
-            return True
-
-        except (PermanentRiskServiceException, DomainError, Exception) as exc:
-            logger.error(
-                "Falha irrecuperável no retry da transação %s: %s",
-                transaction_id,
-                exc,
-            )
-            self._handle_permanent_failure(
-                message=message,
-                exc=exc,
                 transaction_id=transaction_id,
-                event_id=event_id,
-                payload=payload,
                 retry_count=retry_count,
-                headers=headers,
             )
-            return True
+
+            # 1. Verificação Temporal: aguarda timestamp agendado
+            if scheduled_retry_str:
+                try:
+                    scheduled_time = datetime.fromisoformat(scheduled_retry_str)
+                    now = datetime.utcnow()
+                    if now < scheduled_time:
+                        wait_seconds = (scheduled_time - now).total_seconds()
+                        if wait_seconds > 0:
+                            logger.info(
+                                "Mensagem de retry da transação %s aguardando %0.2fs até %s",
+                                transaction_id,
+                                wait_seconds,
+                                scheduled_retry_str,
+                            )
+                            time.sleep(min(wait_seconds, 60.0))
+                except Exception as exc:
+                    logger.warning("Falha ao analisar x-next-retry-timestamp: %s", exc)
+
+            # 2. Execução da análise de risco
+            try:
+                self._use_case.execute(transaction_id=transaction_id, event_id=event_id)
+                self._consumer.commit(message=message, asynchronous=False)
+                logger.info(
+                    "Transação %s reprocessada com sucesso na fila de retry.",
+                    transaction_id,
+                )
+                KAFKA_MESSAGES_CONSUMED_TOTAL.labels(
+                    topic="transactions.retry.v1", status="processed"
+                ).inc()
+                CONSUMER_PROCESSING_DURATION_SECONDS.labels(
+                    topic="transactions.retry.v1"
+                ).observe(time.time() - start_time)
+                return True
+
+            except TransientRiskServiceException as exc:
+                logger.warning(
+                    "Falha transitória persistente no retry da transação %s (tentativa %s): %s",
+                    transaction_id,
+                    retry_count,
+                    exc,
+                )
+                self._handle_retry_or_dlq(
+                    message=message,
+                    exc=exc,
+                    transaction_id=transaction_id,
+                    event_id=event_id,
+                    payload=payload,
+                    retry_count=retry_count,
+                    headers=headers,
+                )
+                KAFKA_MESSAGES_CONSUMED_TOTAL.labels(
+                    topic="transactions.retry.v1",
+                    status="retried" if retry_count < self._max_retries else "dlq",
+                ).inc()
+                return True
+
+            except (PermanentRiskServiceException, DomainError, Exception) as exc:
+                logger.error(
+                    "Falha irrecuperável no retry da transação %s: %s",
+                    transaction_id,
+                    exc,
+                )
+                self._handle_permanent_failure(
+                    message=message,
+                    exc=exc,
+                    transaction_id=transaction_id,
+                    event_id=event_id,
+                    payload=payload,
+                    retry_count=retry_count,
+                    headers=headers,
+                )
+                KAFKA_MESSAGES_CONSUMED_TOTAL.labels(
+                    topic="transactions.retry.v1", status="dlq"
+                ).inc()
+                return True
+
+            finally:
+                clear_log_context()
 
     def _handle_retry_or_dlq(
         self,

@@ -2,17 +2,26 @@ from datetime import datetime, timezone
 import logging
 import time
 
+from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
 from app.domain.ports.message_producer_port import MessageProducerPort
 from app.domain.ports.outbox_repository_port import OutboxRepositoryPort
 from app.infrastructure.database.session import SessionLocal
+from app.infrastructure.observability.metrics import (
+    OUTBOX_EVENTS_PUBLISHED_TOTAL,
+)
+from app.infrastructure.observability.telemetry import (
+    get_tracer,
+    inject_trace_context,
+)
 from app.infrastructure.repositories.mysql_outbox_repository import (
     MySQLOutboxRepository,
 )
 
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer()
 
 
 class OutboxPublisherWorker:
@@ -46,32 +55,44 @@ class OutboxPublisherWorker:
 
         processed_count = 0
         for event in pending_events:
-            try:
-                headers = {
-                    "x-event-id": event.id,
-                    "x-aggregate-id": event.aggregate_id,
-                    "x-timestamp": event.created_at.isoformat(),
-                }
-                self._producer.produce(
-                    topic=event.topic,
-                    key=event.aggregate_id,
-                    value=event.payload,
-                    headers=headers,
-                )
-                self._producer.flush(timeout=5.0)
+            with tracer.start_as_current_span(
+                f"kafka.produce.{event.topic}",
+                kind=SpanKind.PRODUCER,
+            ):
+                try:
+                    headers = {
+                        "x-event-id": event.id,
+                        "x-aggregate-id": event.aggregate_id,
+                        "x-timestamp": event.created_at.isoformat(),
+                    }
+                    inject_trace_context(headers)
 
-                event.mark_as_published(published_at=datetime.now(timezone.utc))
-                outbox_repo.save(event)
-                processed_count += 1
-                logger.info(
-                    f"Evento outbox {event.id} publicado com sucesso no tópico {event.topic}."
-                )
-            except Exception as exc:
-                logger.error(f"Erro ao publicar evento outbox {event.id}: {exc}")
-                event.increment_retry(max_retries=self._max_retries)
-                outbox_repo.save(event)
-                # Interrompe o lote para evitar falhas em cascata no mesmo ciclo
-                break
+                    self._producer.produce(
+                        topic=event.topic,
+                        key=event.aggregate_id,
+                        value=event.payload,
+                        headers=headers,
+                    )
+                    self._producer.flush(timeout=5.0)
+
+                    event.mark_as_published(published_at=datetime.now(timezone.utc))
+                    outbox_repo.save(event)
+                    processed_count += 1
+                    OUTBOX_EVENTS_PUBLISHED_TOTAL.labels(
+                        topic=event.topic, status="success"
+                    ).inc()
+                    logger.info(
+                        f"Evento outbox {event.id} publicado com sucesso no tópico {event.topic}."
+                    )
+                except Exception as exc:
+                    logger.error(f"Erro ao publicar evento outbox {event.id}: {exc}")
+                    event.increment_retry(max_retries=self._max_retries)
+                    outbox_repo.save(event)
+                    OUTBOX_EVENTS_PUBLISHED_TOTAL.labels(
+                        topic=event.topic, status="failed"
+                    ).inc()
+                    # Interrompe o lote para evitar falhas em cascata no mesmo ciclo
+                    break
 
         session.commit()
         return processed_count
