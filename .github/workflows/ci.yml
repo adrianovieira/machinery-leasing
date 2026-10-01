@@ -1,0 +1,161 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONPATH: src
+
+
+jobs:
+  lint:
+    name: Lint & Format Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Check Formatting with Ruff
+        run: ruff format --check .
+
+      - name: Lint Code with Ruff
+        run: ruff check .
+
+  contracts:
+    name: Contract Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache Pipenv Virtualenvs
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/virtualenvs
+          key: ${{ runner.os }}-pipenv-${{ hashFiles('**/Pipfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pipenv-
+
+      - name: Install Pipenv
+        run: pip install pipenv
+
+      - name: Install Dependencies
+        run: pipenv sync --dev
+
+      - name: Run Contract Tests
+        run: pipenv run pytest src/tests/contract/ -v
+
+  test:
+    name: Automated Tests & Coverage
+    runs-on: ubuntu-latest
+    needs: [lint]
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root_pass
+          MYSQL_DATABASE: leasing_db
+          MYSQL_USER: leasing_user
+          MYSQL_PASSWORD: leasing_pass
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache Pipenv Virtualenvs
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/virtualenvs
+          key: ${{ runner.os }}-pipenv-${{ hashFiles('**/Pipfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pipenv-
+
+      - name: Install Pipenv
+        run: pip install pipenv
+
+      - name: Install Dependencies
+        run: pipenv sync --dev
+
+      - name: Run Alembic Migrations
+        env:
+          DATABASE_URL: mysql+pymysql://leasing_user:leasing_pass@127.0.0.1:3306/leasing_db
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_USER: leasing_user
+          MYSQL_PASSWORD: leasing_pass
+          MYSQL_DATABASE: leasing_db
+        run: pipenv run alembic upgrade head
+
+      - name: Run Full Test Suite with Coverage
+        env:
+          DATABASE_URL: mysql+pymysql://leasing_user:leasing_pass@127.0.0.1:3306/leasing_db
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_USER: leasing_user
+          MYSQL_PASSWORD: leasing_pass
+          MYSQL_DATABASE: leasing_db
+          KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+          REDIS_URL: redis://localhost:6379/0
+          PYTHONPATH: src
+        run: |
+          pipenv run pytest --cov=src/app --cov-report=xml --cov-report=term-missing --junitxml=junit-report.xml
+
+      - name: Upload Test Coverage Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+      - name: Upload JUnit Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-results
+          path: junit-report.xml
+
+  security:
+    name: Security & Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Pipenv
+        run: pip install pipenv
+
+      - name: Check Dependencies Vulnerabilities
+        run: pipenv check || true

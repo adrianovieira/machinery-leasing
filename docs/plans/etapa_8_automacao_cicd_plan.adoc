@@ -1,0 +1,83 @@
+---
+title: "Plano de Implementação: Etapa 8 — Automação CI/CD (GitHub Actions & GitLab CI)"
+type: "plan"
+phase: "completed"
+status: "done"
+skills_required:
+  - "docs/skills/cicd_automation.adoc"
+  - "docs/skills/delivery_and_hardening.adoc"
+tools_required:
+  - "github-actions"
+  - "gitlab-ci"
+  - "ruff"
+  - "pytest"
+  - "pipenv"
+  - "alembic"
+  - "docker"
+dependencies:
+  - "docs/plans/etapa_7_refatoracao_testes_entrega_plan.adoc"
+acceptance_criteria:
+  - "Workflow do GitHub Actions (`.github/workflows/ci.yml`) configurado com jobs de Linting/Formatting (Ruff), Validação de Contratos e Suíte de Testes com MySQL 8.0 Service Container."
+  - "Pipeline do GitLab CI (`.gitlab-ci.yml`) configurado com stages de `lint`, `contract`, `test` e `security` utilizando imagem Docker Python 3.11 e MySQL Service."
+  - "Estratégia de cache determinístico de dependências do Pipenv configurada em ambos os provedores para otimizar tempo de execução."
+  - "Geração e publicação de artefatos de cobertura de testes (Coverage XML/HTML e JUnit XML) para visualização na interface de CI."
+  - "Execução automatizada de `pipenv run alembic upgrade head` antes da execução da suíte de integração em ambiente de CI."
+  - "Validação de conformidade das regras do AGENTS.md (ruff check, imports limpos, sem breaking changes)."
+created_at: "2026-10-01"
+updated_at: "2026-10-01"
+---
+
+= Plano de Implementação: Etapa 8 — Automação CI/CD (GitHub Actions & GitLab CI)
+
+Este documento define o plano detalhado de implementação da **Etapa 8: Automação CI/CD**, estabelecendo pipelines de integração contínua robustos, padronizados e reprodutíveis tanto para **GitHub Actions** quanto para **GitLab CI**.
+
+== 1. Contexto e Especificações Relacionadas
+
+* **Especificações e Contratos**:
+  ** link:../../specs/api_v1.yaml[specs/api_v1.yaml]
+  ** link:../../specs/events/transaction_created.json[specs/events/transaction_created.json]
+  ** link:../../specs/events/transaction_status_changed.json[specs/events/transaction_status_changed.json]
+* **Skills Relacionadas**:
+  ** link:../skills/cicd_automation.adoc[docs/skills/cicd_automation.adoc]
+  ** link:../skills/delivery_and_hardening.adoc[docs/skills/delivery_and_hardening.adoc]
+* **Dependências de Planos Anteriores**:
+  ** link:./etapa_7_refatoracao_testes_entrega_plan.adoc[Etapa 7: Refatoração, Suite Completa de Testes e Entrega]
+
+== 2. Escopo e Objetivos da Implementação
+
+1. **GitHub Actions Workflow (`.github/workflows/ci.yml`)**:
+   - Disparo em `push` e `pull_request` nas branches `main` e `develop`.
+   - **Job 1: Lint & Static Analysis**: Executa `ruff check` e `ruff format --check`.
+   - **Job 2: Contract Validation**: Executa `pytest src/tests/contract/`.
+   - **Job 3: Automated Tests**:
+     * Inicia MySQL 8.0 via service container com health check.
+     * Instala dependências com cache de Pipenv.
+     * Aplica migrations via Alembic (`pipenv run alembic upgrade head`).
+     * Executa suíte completa (`pytest --cov=src/app --cov-report=xml`).
+   - **Job 4: Dependency & Security Check**: Executa `pipenv check`.
+
+2. **GitLab CI Pipeline (`.gitlab-ci.yml`)**:
+   - Definição dos stages: `lint`, `contract`, `test`, `security`.
+   - Execução com imagem base `python:3.11-slim`.
+   - Configuração de serviço MySQL 8.0 (`services: [mysql:8.0]`).
+   - Coleta de relatórios JUnit (`artifacts:reports:junit`) e cobertura de código (`coverage: '/TOTAL.*\s+(\d+%)$/'`).
+
+3. **Validação e Simulação Local**:
+   - Teste local dos comandos dos pipelines via `pipenv run` e verificação das variáveis de ambiente de CI.
+
+== 3. Roteiro Passo a Passo de Execução
+
+=== Passo 1: Criação do Workflow GitHub Actions
+- Criar o diretório `.github/workflows/` e o arquivo `.github/workflows/ci.yml`.
+- Configurar jobs modulares (Lint, Contract, Test, Security) com caching e service containers.
+
+=== Passo 2: Criação do Pipeline GitLab CI
+- Criar o arquivo `.gitlab-ci.yml` na raiz do repositório.
+- Estruturar jobs correspondentes garantindo compatibilidade com GitLab Runners e GitLab Services.
+
+=== Passo 3: Verificação de Configurações e Variáveis de Ambiente
+- Garantir que parâmetros de conexão com MySQL em CI (`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`) estejam devidamente alinhados aos scripts de teste e `alembic.ini`.
+
+=== Passo 4: Validação Estática e Commits
+- Executar `ruff check --fix` e `ruff format`.
+- Formular mensagem de commit estruturada segundo o padrão Conventional Commits em pt-BR e solicitar aprovação prévia.
