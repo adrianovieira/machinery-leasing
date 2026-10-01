@@ -54,3 +54,10 @@ htmlcov/
 mysql_data/
 kafka_data/
 redis_data/
+
+# Asciidoctor build artifacts
+.asciidoctor/
+docs/architecture/.asciidoctor/
+docs/architecture/*.png
+docs/architecture/*.pdf
+

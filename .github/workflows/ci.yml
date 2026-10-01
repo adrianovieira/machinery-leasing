@@ -159,3 +159,29 @@ jobs:
 
       - name: Check Dependencies Vulnerabilities
         run: pipenv check || true
+
+  docs-pdf:
+    name: Generate System Design PDF
+    runs-on: ubuntu-latest
+    container:
+      image: asciidoctor/docker-asciidoctor
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Generate SystemDesign.pdf with Asciidoctor and PlantUML
+        run: |
+          asciidoctor-pdf \
+            -r asciidoctor-diagram \
+            -a toc \
+            -a numbered \
+            -a icons=font \
+            docs/architecture/system_design.adoc \
+            -o docs/architecture/SystemDesign.pdf
+
+      - name: Upload SystemDesign PDF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SystemDesign-pdf
+          path: docs/architecture/SystemDesign.pdf
+
