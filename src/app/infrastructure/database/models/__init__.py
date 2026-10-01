@@ -1,3 +1,6 @@
+from app.infrastructure.database.models.inbox_event_model import (
+    InboxEventModel,
+)
 from app.infrastructure.database.models.outbox_event_model import (
     OutboxEventModel,
 )
@@ -7,4 +10,4 @@ from app.infrastructure.database.models.transaction_model import (
 )
 
 
-__all__ = ["Base", "TransactionModel", "OutboxEventModel"]
+__all__ = ["Base", "TransactionModel", "OutboxEventModel", "InboxEventModel"]
