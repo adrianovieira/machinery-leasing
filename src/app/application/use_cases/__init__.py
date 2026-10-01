@@ -4,6 +4,13 @@ from app.application.use_cases.create_transaction_use_case import (
 from app.application.use_cases.get_transaction_use_case import (
     GetTransactionUseCase,
 )
+from app.application.use_cases.process_risk_analysis_use_case import (
+    ProcessRiskAnalysisUseCase,
+)
 
 
-__all__ = ["CreateTransactionUseCase", "GetTransactionUseCase"]
+__all__ = [
+    "CreateTransactionUseCase",
+    "GetTransactionUseCase",
+    "ProcessRiskAnalysisUseCase",
+]
