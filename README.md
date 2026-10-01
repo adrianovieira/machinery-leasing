@@ -3,10 +3,11 @@
 Sistema de alta performance, resiliência e integridade financeira para recepção, validação e análise de risco assíncrona de propostas de leasing de máquinas pesadas.
 
 Projetado sob os princípios da **Arquitetura Hexagonal (Ports & Adapters)** e dos padrões de resiliência distribuída:
-* **Transactional Outbox**: Consistência atômica entre MySQL e Apache Kafka sem _dual-write_.
-* **Inbox Pattern (Idempotência)**: Deduplicação e barreira relacional contra reprocessamento.
-* **Non-Blocking Retry & DLQ**: Backoff exponencial com jitter e isolamento de falhas sem travar partições (*Head-of-Line Blocking*).
-* **Observabilidade & OpenTelemetry**: Rastreabilidade ponta a ponta via W3C TraceContext (`traceparent`), logs em JSON estruturados com mascaramento de dados sensíveis (LGPD/PII) e métricas Prometheus.
+
+- **Transactional Outbox**: Consistência atômica entre MySQL e Apache Kafka sem _dual-write_.
+- **Inbox Pattern (Idempotência)**: Deduplicação e barreira relacional contra reprocessamento.
+- **Non-Blocking Retry & DLQ**: Backoff exponencial com jitter e isolamento de falhas sem travar partições (_Head-of-Line Blocking_).
+- **Observabilidade & OpenTelemetry**: Rastreabilidade ponta a ponta via W3C TraceContext (`traceparent`), logs em JSON estruturados com mascaramento de dados sensíveis (LGPD/PII) e métricas Prometheus.
 
 ---
 
@@ -14,25 +15,25 @@ Projetado sob os princípios da **Arquitetura Hexagonal (Ports & Adapters)** e d
 
 A documentação arquitetural completa está localizada em `docs/`:
 
-* **Visão Geral e Diagramas C4 / PlantUML**: [`docs/architecture/system_design.adoc`](docs/architecture/system_design.adoc)
-* **ADR 001 - Transactional Outbox**: [`docs/architecture/decisions/001_transactional_outbox_pattern.adoc`](docs/architecture/decisions/001_transactional_outbox_pattern.adoc)
-* **ADR 002 - Idempotência e Inbox Pattern**: [`docs/architecture/decisions/002_idempotency_and_inbox_pattern.adoc`](docs/architecture/decisions/002_idempotency_and_inbox_pattern.adoc)
-* **ADR 003 - Non-Blocking Retry e DLQ**: [`docs/architecture/decisions/003_non_blocking_retry_and_dlq.adoc`](docs/architecture/decisions/003_non_blocking_retry_and_dlq.adoc)
-* **ADR 004 - Arquitetura Hexagonal e Isolamento de Domínio**: [`docs/architecture/decisions/004_hexagonal_architecture_domain_isolation.adoc`](docs/architecture/decisions/004_hexagonal_architecture_domain_isolation.adoc)
-* **ADR 005 - Observabilidade e Carga**: [`docs/architecture/decisions/005_observability_metrics_and_load_testing.adoc`](docs/architecture/decisions/005_observability_metrics_and_load_testing.adoc)
+- **Visão Geral e Diagramas C4 / PlantUML**: [`docs/architecture/system_design.adoc`](docs/architecture/system_design.adoc)
+- **ADR 001 - Transactional Outbox**: [`docs/architecture/decisions/001_transactional_outbox_pattern.adoc`](docs/architecture/decisions/001_transactional_outbox_pattern.adoc)
+- **ADR 002 - Idempotência e Inbox Pattern**: [`docs/architecture/decisions/002_idempotency_and_inbox_pattern.adoc`](docs/architecture/decisions/002_idempotency_and_inbox_pattern.adoc)
+- **ADR 003 - Non-Blocking Retry e DLQ**: [`docs/architecture/decisions/003_non_blocking_retry_and_dlq.adoc`](docs/architecture/decisions/003_non_blocking_retry_and_dlq.adoc)
+- **ADR 004 - Arquitetura Hexagonal e Isolamento de Domínio**: [`docs/architecture/decisions/004_hexagonal_architecture_domain_isolation.adoc`](docs/architecture/decisions/004_hexagonal_architecture_domain_isolation.adoc)
+- **ADR 005 - Observabilidade e Carga**: [`docs/architecture/decisions/005_observability_metrics_and_load_testing.adoc`](docs/architecture/decisions/005_observability_metrics_and_load_testing.adoc)
 
 ---
 
 ## 🚀 Tecnologias Utilizadas
 
-* **Linguagem & Runtime**: Python 3.11+
-* **Framework Web**: FastAPI + Uvicorn
-* **Banco de Dados Relacional**: MySQL 8.0 (Fonte primária da verdade)
-* **ORM & Migrations**: SQLAlchemy 2.0 + Alembic
-* **Mensageria Distribuída**: Apache Kafka 3.8 (Modo KRaft) + `confluent-kafka`
-* **Resiliência Síncrona**: `tenacity` + `httpx`
-* **Observabilidade**: OpenTelemetry SDK + `prometheus-client` + `python-json-logger`
-* **Qualidade & Testes**: Pytest, Pytest-Mock, Pytest-Cov, Locust, Ruff e Pipenv
+- **Linguagem & Runtime**: Python 3.11+
+- **Framework Web**: FastAPI + Uvicorn
+- **Banco de Dados Relacional**: MySQL 8.0 (Fonte primária da verdade)
+- **ORM & Migrations**: SQLAlchemy 2.0 + Alembic
+- **Mensageria Distribuída**: Apache Kafka 3.8 (Modo KRaft) + `confluent-kafka`
+- **Resiliência Síncrona**: `tenacity` + `httpx`
+- **Observabilidade**: OpenTelemetry SDK + `prometheus-client` + `python-json-logger`
+- **Qualidade & Testes**: Pytest, Pytest-Mock, Pytest-Cov, Locust, Ruff e Pipenv
 
 ---
 
@@ -73,6 +74,7 @@ pipenv run alembic upgrade head
 ```bash
 pipenv run uvicorn src.app.entrypoints.api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
 Acesse a documentação interativa OpenAPI em: `http://localhost:8000/docs`
 
 ### 2. Iniciar os Workers Assíncronos
@@ -95,13 +97,15 @@ pipenv run python -m app.entrypoints.workers.retry_consumer_worker
 ## 🛠️ Endpoints Principais e Monitoramento
 
 ### API de Transações
-* `POST /api/v1/transactions`: Submete nova proposta de leasing.
-* `GET /api/v1/transactions/{id}`: Consulta dados e status atual da transação.
+
+- `POST /api/v1/transactions`: Submete nova proposta de leasing.
+- `GET /api/v1/transactions/{id}`: Consulta dados e status atual da transação.
 
 ### Observabilidade e Saúde
-* `GET /health/live`: Liveness probe (HTTP 200).
-* `GET /health/ready`: Readiness probe verificando conexões ativas com MySQL e Kafka.
-* `GET /metrics`: Métricas no formato padrão do Prometheus.
+
+- `GET /health/live`: Liveness probe (HTTP 200).
+- `GET /health/ready`: Readiness probe verificando conexões ativas com MySQL e Kafka.
+- `GET /metrics`: Métricas no formato padrão do Prometheus.
 
 ---
 
@@ -147,3 +151,11 @@ pipenv run locust -f src/tests/performance/locustfile.py --headless -u 100 -r 20
 pipenv run ruff check --fix .
 pipenv run ruff format .
 ```
+
+---
+
+## 👥 Autores
+
+- Agente de IA específico para desenvolvimento de software
+- **Revisão, supervisão e arquitetura**:
+  - **Adriano Vieira**

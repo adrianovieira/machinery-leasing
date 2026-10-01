@@ -1,0 +1,72 @@
+image: python:3.11-slim
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  WORKON_HOME: "$CI_PROJECT_DIR/.local/share/virtualenvs"
+  PYTHONPATH: "src"
+  MYSQL_DATABASE: "leasing_db"
+  MYSQL_USER: "leasing_user"
+  MYSQL_PASSWORD: "leasing_pass"
+  MYSQL_ROOT_PASSWORD: "root_pass"
+
+cache:
+  key:
+    files:
+      - Pipfile.lock
+  paths:
+    - .cache/pip
+    - .local/share/virtualenvs
+
+stages:
+  - lint
+  - contract
+  - test
+  - security
+
+before_script:
+  - apt-get update && apt-get install -y --no-install-recommends default-mysql-client git gcc build-essential
+  - pip install --upgrade pip pipenv
+
+lint:
+  stage: lint
+  before_script:
+    - pip install ruff
+  script:
+    - ruff check .
+    - ruff format --check .
+
+contract:
+  stage: contract
+  script:
+    - pipenv sync --dev
+    - pipenv run pytest src/tests/contract/ -v
+
+test:
+  stage: test
+  services:
+    - name: mysql:8.0
+      alias: mysql
+  variables:
+    MYSQL_HOST: "mysql"
+    MYSQL_PORT: "3306"
+    DATABASE_URL: "mysql+pymysql://leasing_user:leasing_pass@mysql:3306/leasing_db"
+  script:
+    - pipenv sync --dev
+    - pipenv run alembic upgrade head
+    - pipenv run pytest --cov=src/app --cov-report=xml --cov-report=term-missing --junitxml=report.xml
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - report.xml
+      - coverage.xml
+
+security:
+  stage: security
+  script:
+    - pipenv check || true

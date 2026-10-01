@@ -1,0 +1,68 @@
+---
+title: "Skill: Automação CI/CD e Garantia de Qualidade Contínua"
+type: "skill"
+category: "devops"
+status: "draft"
+related_specs:
+  - "specs/api_v1.yaml"
+  - "specs/events/transaction_created.json"
+  - "specs/events/transaction_status_changed.json"
+related_plans:
+  - "docs/plans/etapa_8_automacao_cicd_plan.adoc"
+created_at: "2026-10-01"
+updated_at: "2026-10-01"
+---
+
+= Skill: Automação CI/CD e Garantia de Qualidade Contínua
+
+Este documento estabelece os padrões técnicos, arquitetura de pipelines, estratégias de execução de testes com dependências de infraestrutura e gates de qualidade para automação de CI/CD em GitHub Actions e GitLab CI.
+
+== 1. Visão Geral e Objetivos
+
+O objetivo desta skill é fornecer um framework padronizado de Integração e Entrega Contínua (CI/CD) para o ecossistema de processamento financeiro assíncrono:
+1. **Execução Automatizada Multi-Provedor**: Suporte completo e idempotente para GitHub Actions (`.github/workflows/ci.yml`) e GitLab CI (`.gitlab-ci.yml`).
+2. **Quality Gates Estritos**: Bloqueio automatizado de pull/merge requests em caso de falhas de linting, formatação, testes ou quebra de contratos OpenAPI/JSON Schema.
+3. **Isolamento e Reprodutibilidade**: Uso de containers oficiais, cache determinístico de dependências via `pipenv` e execução em ambientes efêmeros.
+4. **Segurança e Análise Estática**: Verificação de vulnerabilidades conhecidas em dependências e auditoria de código.
+
+== 2. Estágios do Pipeline de CI/CD
+
+O fluxo de automação é composto por estágios sequenciais e paralelos para otimizar o tempo de feedback aos desenvolvedores:
+
+[cols="1,2,3", options="header"]
+|===
+| Estágio | Ferramentas | Descrição e Critérios de Sucesso
+
+| **1. Lint & Format**
+| `ruff check`, `ruff format --check`
+| Validação estrita de ordenação de imports, ausência de dead code e estilo PEP 8. Falha imediata se houver violação de formatação.
+
+| **2. Contract Validation**
+| `pytest src/tests/contract/`
+| Verificação de conformidade do schema OpenAPI (`specs/api_v1.yaml`) e esquemas de eventos (`specs/events/*.json`).
+
+| **3. Testes Automatizados & Cobertura**
+| `pytest` (`--cov=src/app`, `--cov-report=xml`, `--cov-report=term-missing`)
+| Execução de testes unitários e de integração com suporte a service containers (MySQL 8.0).
+
+| **4. Security & Audit**
+| `pipenv check`, `bandit` (ou scanner SAST)
+| Verificação de CVEs conhecidas nas dependências travadas no `Pipfile.lock` e análise estática de segurança.
+|===
+
+== 3. Estratégia de Infraestrutura Efêmera (Service Containers)
+
+Para execução dos testes de integração no ambiente de CI:
+
+* **MySQL 8.0**:
+  - Provisionado como container de serviço nativo do runner.
+  - Health check ativo (`mysqladmin ping`) antes de disparar as suítes de testes.
+  - Execução automática de migrações (`pipenv run alembic upgrade head`) antes dos testes de integração.
+* **Kafka & Mock Services**:
+  - Testes que requerem Kafka utilizam fixtures isoladas e mocks determinísticos ou instâncias efêmeras em containers.
+
+== 4. Otimização de Build e Caching
+
+* Cache do diretório de virtualenvs do Pipenv (`~/.local/share/virtualenvs`) baseado no hash do `Pipfile.lock`.
+* Cache de downloads do `pip` (`~/.cache/pip`).
+* Execução paralela dos jobs de linting e validação de contratos para feedback ultra-rápido (< 1 minuto).
