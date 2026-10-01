@@ -1,0 +1,27 @@
+= Especificação de Arquitetura e System Design
+:toc: left
+:toclevels: 3
+:sectnums:
+:icons: font
+
+== Visão Geral
+
+Este documento descreve a arquitetura da plataforma de processamento assíncrono de transações de leasing de máquinas, modelada sob os princípios da *Arquitetura Hexagonal (Ports & Adapters)* e dos padrões de resiliência distribuída *Transactional Outbox*, *Inbox Pattern (Idempotência)* e *Non-blocking Retry / Dead Letter Queue (DLQ)*.
+
+== Diagrama de Contexto de Sistema
+
+O diagrama a seguir define as fronteiras do sistema, destacando os atores externos (clientes/integradores), o serviço de análise de risco e os sistemas consumidores downstream.
+
+[plantuml, system_context, align="center"]
+----
+include::../diagrams/system_context.puml[]
+----
+
+== Diagrama de Arquitetura de Containers
+
+O diagrama a seguir detalha a divisão dos componentes do sistema, isolando os adaptadores de entrada (API HTTP e Consumidores Kafka), os serviços de domínio e os adaptadores de infraestrutura (MySQL, Kafka, Redis e Clientes HTTP).
+
+[plantuml, architecture_overview, align="center"]
+----
+include::../diagrams/architecture_overview.puml[]
+----

@@ -1,0 +1,20 @@
+@startuml system_context
+title Diagrama de Contexto de Sistema (C4 Context) — Plataforma de Leasing
+
+!include <C4/C4_Context>
+
+LAYOUT_WITH_LEGEND()
+
+Person(client, "Cliente / Sistema Integrador", "Aplicações de parceiros ou usuários que submetem solicitações de leasing e consultam status")
+
+System(leasing_system, "Sistema de Processamento de Leasing", "Recebe, valida, persiste atomicamente e processa assincronamente as propostas financeiras de leasing")
+
+System_Ext(risk_service, "Serviço Externo de Análise de Risco", "Avalia o risco de crédito do cliente e retorna a decisão (APPROVED / REJECTED)")
+
+System_Ext(downstream_systems, "Sistemas Downstream", "Sistemas financeiros, de faturamento ou CRM que consomem eventos de mudanças de status")
+
+Rel(client, leasing_system, "Submete solicitações e consulta status", "HTTPS / REST JSON")
+Rel(leasing_system, risk_service, "Solicita avaliação de crédito", "HTTPS / REST JSON")
+Rel(leasing_system, downstream_systems, "Publica eventos de atualização de status", "Kafka Event Streams")
+
+@enduml

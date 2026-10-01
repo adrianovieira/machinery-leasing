@@ -1,0 +1,42 @@
+@startuml architecture_overview
+title Diagrama de Arquitetura de Containers (C4 / Hexagonal) — Plataforma de Leasing
+
+!include <C4/C4_Container>
+
+LAYOUT_WITH_LEGEND()
+
+
+Person(client, "Cliente / Sistema Integrador", "Aplicações clientes ou usuários realizando solicitações de leasing")
+
+System_Boundary(c1, "Sistema de Processamento de Leasing de Máquinas") {
+    Container(api, "API HTTP", "Python / FastAPI", "Expõe endpoints REST para criação (POST /transactions) e consulta (GET /transactions/{id})")
+    
+    Container(outbox_worker, "Outbox Publisher Worker", "Python Daemon", "Executa polling transacional em outbox_events e publica no Kafka de forma confiável")
+    
+    Container(consumer_worker, "Transaction Consumer Worker", "Python Daemon", "Consome eventos do Kafka, assegura idempotência via Inbox, orquestra análise de risco e gerencia retries/DLQ")
+    
+    ContainerDb(mysql, "Banco de Dados Principal", "MySQL 8.0", "Armazena transactions, outbox_events e inbox_events com garantias ACID")
+    
+    ContainerDb(redis, "Cache de Leitura (Opcional)", "Redis 7.0", "Acelera consultas frequentes de status da transação")
+    
+    ContainerQueue(kafka, "Message Broker", "Apache Kafka", "Tópicos:\n- transactions.created.v1\n- transactions.retry.v1\n- transactions.dlq.v1\n- transactions.status.v1")
+}
+
+System_Ext(risk_service, "Serviço Externo de Risco", "API Externa", "Avalia e retorna decisão de crédito (APPROVED / REJECTED)")
+System_Ext(downstream_systems, "Sistemas Downstream", "Sistemas Notificados", "Consomem atualizações de status de transações finalizadas")
+
+Rel(client, api, "Cria transação e consulta status", "HTTPS / JSON")
+Rel(api, mysql, "Persiste transação e outbox na mesma transação ACID", "SQLAlchemy / MySQL Driver")
+Rel(api, redis, "Consulta e popula cache de leitura", "TCP / Redis Protocol")
+
+Rel(outbox_worker, mysql, "Lê eventos PENDING via SELECT FOR UPDATE SKIP LOCKED e marca PUBLISHED", "SQLAlchemy")
+Rel(outbox_worker, kafka, "Publica eventos criados e mudanças de status", "Kafka Protocol / acks=all")
+
+Rel(kafka, consumer_worker, "Consome mensagens de criação e retries", "Kafka Consumer Group")
+Rel(consumer_worker, mysql, "Verifica/registra idempotência no Inbox e atualiza status da transação", "SQLAlchemy / MySQL Driver")
+Rel(consumer_worker, risk_service, "Solicita análise de risco (POST /risk-analysis)", "HTTPS / JSON com Circuit Breaker")
+Rel(consumer_worker, kafka, "Publica mensagens para tópicos de retry e DLQ", "Kafka Protocol")
+
+Rel(kafka, downstream_systems, "Notifica mudanças de status das transações", "Kafka Consumer")
+
+@enduml
