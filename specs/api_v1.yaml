@@ -1,0 +1,200 @@
+openapi: 3.0.3
+info:
+  title: API de Processamento de Transações de Leasing
+  description: >
+    API síncrona para recepção e consulta de transações de leasing de máquinas,
+    com garantia de persistência transacional ACID (Transactional Outbox).
+  version: 1.0.0
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Ambiente de Desenvolvimento Local
+
+paths:
+  /transactions:
+    post:
+      summary: Cria uma nova solicitação de transação de leasing
+      description: >
+        Recebe os dados da solicitação financeira, gera identificador único,
+        persiste a transação com status PENDING e grava atomicamente o evento
+        na outbox para processamento assíncrono.
+      operationId: createTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransactionRequest'
+            example:
+              customer_id: "123"
+              value: 1500.00
+      responses:
+        '201':
+          description: Transação criada e enfileirada com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+              example:
+                id: "550e8400-e29b-41d4-a716-446655440000"
+                customer_id: "123"
+                value: 1500.00
+                status: "PENDING"
+                created_at: "2026-09-30T21:00:00Z"
+                updated_at: "2026-09-30T21:00:00Z"
+        '400':
+          description: Dados de entrada inválidos (validação de schema ou valores não positivos).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Erro interno ao persistir a transação no banco de dados.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /transactions/{id}:
+    get:
+      summary: Consulta o estado atual de uma transação
+      description: Retorna os dados e o status atualizado da transação pelo identificador UUID.
+      operationId: getTransactionById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador UUIDv4 da transação
+          schema:
+            type: string
+            format: uuid
+            example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Transação encontrada com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+              example:
+                id: "550e8400-e29b-41d4-a716-446655440000"
+                customer_id: "123"
+                value: 1500.00
+                status: "APPROVED"
+                failure_reason: null
+                created_at: "2026-09-30T21:00:00Z"
+                updated_at: "2026-09-30T21:00:05Z"
+        '404':
+          description: Transação não encontrada para o identificador informado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: "TRANSACTION_NOT_FOUND"
+                message: "Transação não encontrada para o id informado."
+        '500':
+          description: Erro interno de servidor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    TransactionStatus:
+      type: string
+      enum:
+        - PENDING
+        - PROCESSING
+        - APPROVED
+        - REJECTED
+        - RETRYING
+        - FAILED
+      description: >
+        Ciclo de estados da transação:
+        * PENDING: Persistida via API; aguardando retirada pelo consumer.
+        * PROCESSING: Em análise de crédito pelo serviço externo.
+        * APPROVED: Transação aprovada com sucesso.
+        * REJECTED: Transação reprovada pelas regras de crédito.
+        * RETRYING: Falha temporária externa; aguardando nova tentativa em retry topic.
+        * FAILED: Esgotadas tentativas de retry na DLQ ou erro crítico.
+
+    CreateTransactionRequest:
+      type: object
+      required:
+        - customer_id
+        - value
+      properties:
+        customer_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Identificador do cliente solicitante
+          example: "123"
+        value:
+          type: number
+          format: float
+          minimum: 0.01
+          description: Valor monetário da transação de leasing
+          example: 1500.00
+
+    TransactionResponse:
+      type: object
+      required:
+        - id
+        - customer_id
+        - value
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identificador único da transação
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        customer_id:
+          type: string
+          description: Identificador do cliente
+          example: "123"
+        value:
+          type: number
+          format: float
+          description: Valor da transação
+          example: 1500.00
+        status:
+          $ref: '#/components/schemas/TransactionStatus'
+        failure_reason:
+          type: string
+          nullable: true
+          description: Detalhamento da falha quando o status for FAILED
+          example: null
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp ISO-8601 de criação
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp ISO-8601 da última atualização de status
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Código identificador do erro
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          description: Mensagem descritiva do erro
+          example: "O valor da transação deve ser estritamente maior que zero."
+        details:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Informações adicionais de validação
