@@ -1,4 +1,4 @@
-# Skill: Idempotency & Inbox Pattern
+# Estratégia de Idempotência
 
 Este documento descreve a lógica e os procedimentos operacionais para garantir **idempotência estrita** e tratamento de duplicidade no consumidor Kafka.
 
@@ -6,8 +6,8 @@ Este documento descreve a lógica e os procedimentos operacionais para garantir 
 
 ## 1. Problema e Objetivos
 
-* **Problema**: Mensagens duplicadas geradas por rebalanceamento de partições, falhas antes do commit de offset ou retransmissões de rede.
-* **Objetivo**: Garantir que cada evento seja processado exatamente uma vez nos seus efeitos colaterais de negócio (chamada ao serviço externo de risco e mutações de banco).
+- **Problema**: Mensagens duplicadas geradas por rebalanceamento de partições, falhas antes do commit de offset ou retransmissões de rede.
+- **Objetivo**: Garantir que cada evento seja processado exatamente uma vez nos seus efeitos colaterais de negócio (chamada ao serviço externo de risco e mutações de banco).
 
 ---
 
@@ -15,10 +15,10 @@ Este documento descreve a lógica e os procedimentos operacionais para garantir 
 
 A tabela `inbox_events` funciona como barreira de idempotência relacional:
 
-* `event_id` (VARCHAR 36 - Primary Key): Identificador único original do evento.
-* `consumer_group` (VARCHAR 64): Identificador do grupo de consumidores.
-* `status` (ENUM): `'PROCESSING'`, `'COMPLETED'`, `'RETRYING'`, `'FAILED'`.
-* `processed_at` (TIMESTAMP): Data do registro.
+- `event_id` (VARCHAR 36 - Primary Key): Identificador único original do evento.
+- `consumer_group` (VARCHAR 64): Identificador do grupo de consumidores.
+- `status` (ENUM): `'PROCESSING'`, `'COMPLETED'`, `'RETRYING'`, `'FAILED'`.
+- `processed_at` (TIMESTAMP): Data do registro.
 
 ---
 
@@ -78,7 +78,7 @@ def process_kafka_message(msg):
 
 ## 4. Tratamento de Falhas Específicas
 
-| Cenário de Falha | Resolução da Skill |
-|---|---|
+| Cenário de Falha                                       | Resolução da Skill                                                                                                                                                                                               |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Consumer morre antes de chamar `consumer.commit()`** | Ao reiniciar, o Kafka reentrega a mensagem. A tentativa de `INSERT` no Inbox falha por chave duplicada (`IntegrityError`), a execução é abortada sem chamar o serviço de risco novamente e o offset é commitado. |
-| **Dois consumers recebem réplicas da mesma mensagem** | O banco de dados rejeita a segunda inserção concorrente pela restrição de Primary Key, garantindo exclusão mútua. |
+| **Dois consumers recebem réplicas da mesma mensagem**  | O banco de dados rejeita a segunda inserção concorrente pela restrição de Primary Key, garantindo exclusão mútua.                                                                                                |

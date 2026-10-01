@@ -1,3 +1,17 @@
+---
+title: "Skill: Transactional Outbox Pattern"
+type: "skill"
+category: "resilience"
+status: "approved"
+related_specs:
+  - "specs/events/transaction_created.json"
+  - "specs/events/transaction_status_changed.json"
+related_plans:
+  - "docs/plans/etapa_3_transactional_outbox_plan.md"
+created_at: "2026-10-01"
+updated_at: "2026-10-01"
+---
+
 # Skill: Transactional Outbox Pattern
 
 Este documento descreve a lógica e os procedimentos operacionais para a implementação do padrão **Transactional Outbox**, garantindo atomicidade entre o banco de dados (MySQL) e o message broker (Apache Kafka).

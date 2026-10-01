@@ -65,12 +65,12 @@ Para cada nova funcionalidade ou correção crítica solicitada, o agente DEVE s
    - _Regra:_ O código nunca deve violar estas specs.
 
 2. **Skills (Lógica de Negócio):**
-   - Criar/atualizar `docs/skills/<nome_da_skill>.md` (ex: `docs/skills/idempotency.md`, `docs/skills/outbox_pattern.md`).
+   - Criar/atualizar `docs/skills/<nome_da_skill>.adoc` (ex: `docs/skills/idempotency.adoc`, `docs/skills/outbox_pattern.adoc`).
    - Descrever aqui a estratégia lógica, algoritmos de retry, e como lidar com falhas específicas.
    - _Regra:_ Esta seção explica o "COMO" a lógica será resolvida.
 
 3. **Implementation Plan (Roteiro):**
-   - Criar `docs/plans/<feature_name>_plan.md`.
+   - Criar `docs/plans/<feature_name>_plan.adoc`.
    - Detalhar os passos de implementação, quais Tools serão usadas para cada Skill e a ordem de execução.
    - _Regra:_ Este plano deve ser aprovado pelo usuário antes da geração de código.
 
@@ -171,3 +171,50 @@ Sempre que uma tarefa for concluída ou o usuário solicitar:
   2. Imports de terceiros (ex: fastapi, sqlalchemy)
   3. Imports locais do projeto (ex: `from models import ...`)
 - Use `ruff format` para garantir que haja 2 linhas em branco após a seção de imports.
+
+---
+
+## Gerenciamento de Banco de Dados e Migrations (Alembic)
+
+O esquema do banco de dados MySQL deve ser versionado e evoluído **exclusivamente através do Alembic**:
+
+1. **Geração via Alembic**: Todos os scripts de migração devem ser gerados pelo próprio Alembic (ex: `pipenv run alembic revision -m "<descricao>"` ou `pipenv run alembic revision --autogenerate -m "<descricao>"`).
+2. **Metadata Centralizado**: Todos os models SQLAlchemy (`Base.metadata`) devem estar importados no `alembic/env.py` para detecção automática de entidades.
+3. **Idempotência e Reversibilidade**: Toda migration gerada deve conter implementações válidas e testadas de `upgrade()` e `downgrade()`.
+4. **Proibição de DDL Manual**: É expressamente proibido criar tabelas ou colunas manualmente em código de produção (`Base.metadata.create_all()` só é permitido em fixtures de testes in-memory isolados).
+5. **Execução**: Aplicar alterações sempre via `pipenv run alembic upgrade head`.
+
+---
+
+## Padrão de Documentos (YAML Frontmatter)
+
+Todos os arquivos em `docs/skills/` e `docs/plans/` DEVEM começar com um bloco YAML Frontmatter válido.
+
+### Campos Obrigatórios para Skills:
+
+- `title`: Nome da skill.
+- `type`: Sempre "skill".
+- `category`: Categoria (ex: resilience, consistency, observability).
+- `status`: "draft", "approved", "implemented", "deprecated".
+- `related_specs`: Lista de arquivos de specs relacionados.
+- `related_plans`: Lista de planos que implementam esta skill.
+
+### Campos Obrigatórios para Plans:
+
+- `title`: Nome do plano.
+- `type`: Sempre "plan".
+- `phase`: "planning", "in_progress", "completed".
+- `status`: "pending", "approved", "blocked", "done".
+- `skills_required`: Lista de skills necessárias.
+- `tools_required`: Lista de ferramentas/bibliotecas.
+- `dependencies`: Lista de IDs de outros planos necessários.
+- `acceptance_criteria`: Lista de critérios de aceite (bullet points).
+
+### Exemplo de Uso pelo Agente:
+
+Ao criar ou atualizar um documento, o agente deve:
+
+1. Preencher todos os campos obrigatórios no frontmatter.
+2. Atualizar o `updated_at` para a data atual.
+3. Garantir que `related_specs` e `dependencies` apontem para arquivos existentes.
+4. Usar o status para controlar o fluxo (ex: não gerar código se status != "approved").
