@@ -160,3 +160,14 @@ Sempre que uma tarefa for concluída ou o usuário solicitar:
 2. Determine o `<tipo>` usando a tabela de mapeamento.
 3. Redija o `<assunto>` (max 60 chars) e `<body>` (bullets, max 72 chars).
 4. Apresente a mensagem completa ao usuário para **aprovação** antes de executar `git commit`.
+
+## Ordenação de Imports
+
+- Utilize exclusivamente o **Ruff** para ordenar e limpar imports.
+- Não utilize `isort` ou `autoflake` separadamente.
+- Antes de gerar qualquer código, o agente deve garantir que os imports estejam ordenados e livres de duplicatas usando `ruff check --fix`.
+- A ordem padrão deve ser:
+  1. Imports padrão (stdlib)
+  2. Imports de terceiros (ex: fastapi, sqlalchemy)
+  3. Imports locais do projeto (ex: `from src.models import ...`)
+- Use `ruff format` para garantir que haja 2 linhas em branco após a seção de imports.

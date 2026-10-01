@@ -1,0 +1,36 @@
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra -q"
+testpaths = ["src/tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes
+    "I",       # isort (imports)
+    "B",       # bugbear
+    "C4",      # comprehensions
+    "UP",      # pyupgrade
+    "SIM",     # simplify
+]
+ignore = [
+    "E501",     # Ignora linha longa no linter (o formatador cuida disso)
+    "ANN"       # type annotations
+]
+
+[tool.ruff.lint.isort]
+# Configurações opcionais específicas para imports
+known-first-party = ["src", "tests"] # Trata 'src' como import local
+force-sort-within-sections = true    # Ordena dentro de seções (std, third-party, local)
+lines-after-imports = 2              # Linhas em branco após imports
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
