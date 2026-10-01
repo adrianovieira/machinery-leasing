@@ -86,7 +86,7 @@ Para cada nova funcionalidade ou correção crítica solicitada, o agente DEVE s
 
 ## Controle de Versão e Padrão de Commits (Git)
 
-Todo código gerado ou modificado deve ser versionado seguindo estritamente as diretrizes abaixo. O agente deve simular ou executar comandos `git` conforme solicitado, garantindo que as mensagens de commit sigam o padrão **Conventional Commits**.
+Todo código gerado ou modificado deve ser versionado seguindo estritamente as diretrizes abaixo. O agente deve simular ou executar comandos `git` conforme solicitado, garantindo que as mensagens (em pt-BR) de commit sigam o padrão **Conventional Commits**.
 
 ### Formato do Commit
 
@@ -109,7 +109,7 @@ Closes #ID
   - Máximo de **60 caracteres**.
   - Comece com letra minúscula (após o tipo/escopo).
   - Não use ponto final (.).
-  - Use o modo imperativo ("Add feature", não "Added feature").
+  - Use o modo imperativo (exemplo: "Adiciona funcionalidade", não "Adicionou funcionalidade").
 - **Corpo (Body):**
   - Separe do assunto por uma linha em branco.
   - Limite de **72 caracteres** por linha.
