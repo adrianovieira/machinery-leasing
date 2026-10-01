@@ -20,7 +20,11 @@ class MySQLTransactionRepository(TransactionRepositoryPort):
             self._session.query(TransactionModel).filter_by(id=transaction.id).first()
         )
         if model:
-            model.status = transaction.status
+            model.status = (
+                transaction.status.value
+                if hasattr(transaction.status, "value")
+                else str(transaction.status)
+            )
             model.failure_reason = transaction.failure_reason
             model.updated_at = transaction.updated_at
         else:

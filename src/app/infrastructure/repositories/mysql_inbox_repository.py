@@ -20,9 +20,19 @@ class MySQLInboxRepository(InboxRepositoryPort):
         self, event_id: str, consumer_group: str, session: Session | None = None
     ) -> bool:
         """Tenta registrar a mensagem no inbox com status PROCESSING.
-        Usa savepoint aninhado para capturar IntegrityError caso o event_id já exista.
+        Se já existir como FAILED ou RETRYING (ex: via DLQ Replay), permite re-adquirir.
+        Se já for COMPLETED ou PROCESSING (em andamento), rejeita como duplicada.
         """
         s = session or self._session
+        existing = s.query(InboxEventModel).filter_by(event_id=event_id).first()
+        if existing:
+            if existing.status in ("FAILED", "RETRYING"):
+                existing.status = "PROCESSING"
+                existing.error_message = None
+                s.flush()
+                return True
+            return False
+
         try:
             with s.begin_nested():
                 model = InboxEventModel(

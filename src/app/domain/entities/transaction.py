@@ -98,12 +98,17 @@ class Transaction:
     # Transições da Máquina de Estados
     # ==========================================
     def mark_as_processing(self) -> None:
-        """Transição PENDING -> PROCESSING ou RETRYING -> PROCESSING."""
-        if self._status not in (TransactionStatus.PENDING, TransactionStatus.RETRYING):
+        """Transição PENDING -> PROCESSING, RETRYING -> PROCESSING ou FAILED -> PROCESSING (Replay DLQ)."""
+        if self._status not in (
+            TransactionStatus.PENDING,
+            TransactionStatus.RETRYING,
+            TransactionStatus.FAILED,
+        ):
             raise InvalidTransactionStateError(
                 self._status.value, TransactionStatus.PROCESSING.value
             )
         self._status = TransactionStatus.PROCESSING
+        self._failure_reason = None
         self._updated_at = datetime.now(timezone.utc)
 
     def mark_as_approved(self) -> None:

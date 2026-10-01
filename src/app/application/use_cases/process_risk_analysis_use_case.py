@@ -57,9 +57,10 @@ class ProcessRiskAnalysisUseCase:
                 raise TransactionNotFoundError(transaction_id)
 
             old_status = tx.status.value
-            tx.mark_as_processing()
-            tx_repo.save(tx)
-            session.commit()
+            if tx.status.value not in ("PROCESSING", "APPROVED", "REJECTED"):
+                tx.mark_as_processing()
+                tx_repo.save(tx)
+                session.commit()
             customer_id = tx.customer_id
             tx_value = tx.value.to_decimal()
 
@@ -83,12 +84,12 @@ class ProcessRiskAnalysisUseCase:
             if not tx:
                 raise TransactionNotFoundError(transaction_id)
 
-            if risk_evaluation.decision == RiskDecisionEnum.APPROVED:
-                tx.mark_as_approved()
-            else:
-                tx.mark_as_rejected(reason=risk_evaluation.reason)
-
-            tx_repo.save(tx)
+            if tx.status.value != "APPROVED":
+                if risk_evaluation.decision == RiskDecisionEnum.APPROVED:
+                    tx.mark_as_approved()
+                else:
+                    tx.mark_as_rejected(reason=risk_evaluation.reason)
+                tx_repo.save(tx)
 
             # Emissão do evento de mudança de status
             status_event_payload = TransactionStatusChangedEventPayload.create(
