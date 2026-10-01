@@ -11,6 +11,9 @@ from app.application.use_cases.get_transaction_use_case import (
     GetTransactionUseCase,
 )
 from app.infrastructure.database.session import SessionLocal
+from app.infrastructure.repositories.mysql_outbox_repository import (
+    MySQLOutboxRepository,
+)
 from app.infrastructure.repositories.mysql_transaction_repository import (
     MySQLTransactionRepository,
 )
@@ -43,10 +46,23 @@ TransactionRepoDep = Annotated[
 ]
 
 
+def get_outbox_repository(
+    db: DbSessionDep,
+) -> MySQLOutboxRepository:
+    return MySQLOutboxRepository(db)
+
+
+OutboxRepoDep = Annotated[MySQLOutboxRepository, Depends(get_outbox_repository)]
+
+
 def get_create_transaction_use_case(
-    repo: TransactionRepoDep,
+    tx_repo: TransactionRepoDep,
+    outbox_repo: OutboxRepoDep,
 ) -> CreateTransactionUseCase:
-    return CreateTransactionUseCase(repo)
+    return CreateTransactionUseCase(
+        transaction_repository=tx_repo,
+        outbox_repository=outbox_repo,
+    )
 
 
 def get_transaction_by_id_use_case(
