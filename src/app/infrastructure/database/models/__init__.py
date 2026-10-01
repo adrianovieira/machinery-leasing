@@ -1,4 +1,4 @@
-from src.app.infrastructure.database.models.transaction_model import (
+from app.infrastructure.database.models.transaction_model import (
     Base,
     TransactionModel,
 )

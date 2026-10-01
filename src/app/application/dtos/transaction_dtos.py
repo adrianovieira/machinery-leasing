@@ -2,8 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
-from src.app.domain.entities.transaction import Transaction
-from src.app.domain.value_objects.transaction_status import TransactionStatus
+from app.domain.entities.transaction import Transaction
+from app.domain.value_objects.transaction_status import TransactionStatus
 
 
 class CreateTransactionRequestDTO(BaseModel):

@@ -169,5 +169,5 @@ Sempre que uma tarefa for concluída ou o usuário solicitar:
 - A ordem padrão deve ser:
   1. Imports padrão (stdlib)
   2. Imports de terceiros (ex: fastapi, sqlalchemy)
-  3. Imports locais do projeto (ex: `from src.models import ...`)
+  3. Imports locais do projeto (ex: `from models import ...`)
 - Use `ruff format` para garantir que haja 2 linhas em branco após a seção de imports.

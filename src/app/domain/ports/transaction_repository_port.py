@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from src.app.domain.entities.transaction import Transaction
+from app.domain.entities.transaction import Transaction
 
 
 class TransactionRepositoryPort(ABC):

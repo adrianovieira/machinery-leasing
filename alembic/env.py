@@ -6,7 +6,7 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 
 # Import dos modelos e Base da aplicação
-from src.app.infrastructure.database.models.transaction_model import Base
+from app.infrastructure.database.models.transaction_model import Base
 
 
 # this is the Alembic Config object, which provides

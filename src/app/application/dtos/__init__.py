@@ -1,4 +1,4 @@
-from src.app.application.dtos.transaction_dtos import (
+from app.application.dtos.transaction_dtos import (
     CreateTransactionRequestDTO,
     ErrorResponseDTO,
     TransactionResponseDTO,

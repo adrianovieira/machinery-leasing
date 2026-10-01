@@ -2,12 +2,12 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import uuid
 
-from src.app.domain.exceptions.domain_exceptions import (
+from app.domain.exceptions.domain_exceptions import (
     DomainValidationError,
     InvalidTransactionStateError,
 )
-from src.app.domain.value_objects.money import Money
-from src.app.domain.value_objects.transaction_status import TransactionStatus
+from app.domain.value_objects.money import Money
+from app.domain.value_objects.transaction_status import TransactionStatus
 
 
 class Transaction:

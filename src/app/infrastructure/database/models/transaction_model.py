@@ -10,9 +10,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base
 
-from src.app.domain.entities.transaction import Transaction
-from src.app.domain.value_objects.money import Money
-from src.app.domain.value_objects.transaction_status import TransactionStatus
+from app.domain.entities.transaction import Transaction
+from app.domain.value_objects.money import Money
+from app.domain.value_objects.transaction_status import TransactionStatus
 
 
 Base = declarative_base()

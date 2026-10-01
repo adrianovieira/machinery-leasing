@@ -2,17 +2,17 @@ from decimal import Decimal
 
 import pytest
 
-from src.app.application.dtos.transaction_dtos import (
+from app.application.dtos.transaction_dtos import (
     CreateTransactionRequestDTO,
     TransactionResponseDTO,
 )
-from src.app.domain.entities.transaction import Transaction
-from src.app.domain.exceptions.domain_exceptions import (
+from app.domain.entities.transaction import Transaction
+from app.domain.exceptions.domain_exceptions import (
     DomainValidationError,
     InvalidTransactionStateError,
 )
-from src.app.domain.value_objects.transaction_status import TransactionStatus
-from src.app.infrastructure.database.models.transaction_model import TransactionModel
+from app.domain.value_objects.transaction_status import TransactionStatus
+from app.infrastructure.database.models.transaction_model import TransactionModel
 
 
 def test_create_transaction_success():
