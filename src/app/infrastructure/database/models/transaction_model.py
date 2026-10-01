@@ -3,23 +3,23 @@ from sqlalchemy import (
     DateTime,
     Numeric,
     String,
-    text,
+    func,
 )
 from sqlalchemy import (
     Enum as SQLEnum,
 )
 from sqlalchemy.orm import declarative_base
 
-from app.domain.entities.transaction import Transaction
-from app.domain.value_objects.money import Money
-from app.domain.value_objects.transaction_status import TransactionStatus
+from src.app.domain.entities.transaction import Transaction
+from src.app.domain.value_objects.money import Money
+from src.app.domain.value_objects.transaction_status import TransactionStatus
 
 
 Base = declarative_base()
 
 
 class TransactionModel(Base):
-    """Mapeamento ORM SQLAlchemy da tabela 'transactions' no MySQL."""
+    """Mapeamento ORM SQLAlchemy da tabela 'transactions'."""
 
     __tablename__ = "transactions"
 
@@ -37,13 +37,12 @@ class TransactionModel(Base):
         index=True,
     )
     failure_reason = Column(String(255), nullable=True)
-    created_at = Column(
-        DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP")
-    )
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(
         DateTime,
         nullable=False,
-        server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     def to_domain(self) -> Transaction:
