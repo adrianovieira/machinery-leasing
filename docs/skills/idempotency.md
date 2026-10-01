@@ -1,3 +1,17 @@
+---
+title: "Skill: Idempotency Pattern (Inbox Pattern)"
+type: "skill"
+category: "resilience"
+status: "approved"
+related_specs:
+  - "specs/events/transaction_created.json"
+  - "specs/events/transaction_status_changed.json"
+related_plans:
+  - "docs/plans/etapa_4_consumidor_idempotente_plan.md"
+created_at: "2026-10-01"
+updated_at: "2026-10-01"
+---
+
 # Estratégia de Idempotência
 
 Este documento descreve a lógica e os procedimentos operacionais para garantir **idempotência estrita** e tratamento de duplicidade no consumidor Kafka.
