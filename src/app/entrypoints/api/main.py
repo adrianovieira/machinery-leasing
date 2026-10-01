@@ -6,13 +6,21 @@ from app.domain.exceptions.domain_exceptions import (
     DomainValidationError,
     TransactionNotFoundError,
 )
+from app.entrypoints.api.middlewares.correlation_middleware import (
+    CorrelationAndTelemetryMiddleware,
+)
 from app.entrypoints.api.routers.transactions_router import (
     router as transactions_router,
 )
+from app.entrypoints.api.routes.health import router as health_router
+from app.entrypoints.api.routes.metrics import router as metrics_router
+from app.infrastructure.observability.logging import configure_logging
 
 
 def create_app() -> FastAPI:
     """Factory para criação e configuração da aplicação FastAPI."""
+    configure_logging()
+
     app = FastAPI(
         title="API de Processamento de Transações de Leasing",
         description="Serviço síncrono para criação e consulta de transações financeiras.",
@@ -21,8 +29,13 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
     )
 
+    # Middleware de OpenTelemetry, Trace Context e Correlation ID
+    app.add_middleware(CorrelationAndTelemetryMiddleware)
+
     # Inclusão de Rotas
     app.include_router(transactions_router, prefix="/api/v1")
+    app.include_router(metrics_router)
+    app.include_router(health_router)
 
     # ==========================================
     # Global Exception Handlers

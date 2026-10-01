@@ -15,8 +15,12 @@ cryptography = "~=50.0.2"
 confluent-kafka = "~=2.15.1"
 redis = "~=8.1.0"
 tenacity = "~=9.1.0"
-python-json-logger = "~=4.1.0"
 httpx2 = "~=2.13.1"
+opentelemetry-api = "*"
+opentelemetry-sdk = "*"
+prometheus-client = "*"
+python-json-logger = "*"
+locust = "*"
 
 [dev-packages]
 ruff = "*"

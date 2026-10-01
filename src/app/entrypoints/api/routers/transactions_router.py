@@ -8,6 +8,9 @@ from app.entrypoints.api.dependencies import (
     CreateTxUseCaseDep,
     GetTxUseCaseDep,
 )
+from app.infrastructure.observability.metrics import (
+    TRANSACTIONS_CREATED_TOTAL,
+)
 
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
@@ -23,7 +26,9 @@ def create_transaction(
     request_dto: CreateTransactionRequestDTO,
     use_case: CreateTxUseCaseDep,
 ) -> TransactionResponseDTO:
-    return use_case.execute(request_dto)
+    result = use_case.execute(request_dto)
+    TRANSACTIONS_CREATED_TOTAL.labels(status=result.status).inc()
+    return result
 
 
 @router.get(
