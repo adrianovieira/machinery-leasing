@@ -43,3 +43,12 @@ O processamento assíncrono das transações contempla proteção contra duplica
 ----
 include::../diagrams/consumer_retry_dlq_sequence.puml[]
 ----
+
+== Architecture Decision Records (ADRs)
+
+As decisões fundamentais e os trade-offs de engenharia estão formalizados nos seguintes registros:
+
+* link:decisions/001_transactional_outbox_pattern.adoc[ADR 001: Adoção do Padrão Transactional Outbox]
+* link:decisions/002_idempotency_and_inbox_pattern.adoc[ADR 002: Idempotência com Inbox Pattern e Garantia At-Least-Once]
+* link:decisions/003_non_blocking_retry_and_dlq.adoc[ADR 003: Estratégia de Non-Blocking Retry e Dead Letter Queue (DLQ)]
+* link:decisions/004_hexagonal_architecture_domain_isolation.adoc[ADR 004: Arquitetura Hexagonal e Isolamento de Domínio]

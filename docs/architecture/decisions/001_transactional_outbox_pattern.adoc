@@ -1,0 +1,32 @@
+= ADR 001: Adoção do Padrão Transactional Outbox
+:status: Aceito
+:date: 2026-09-30
+:decision-makers: Time de Engenharia e Arquitetura
+
+== Contexto
+
+Na plataforma de leasing de máquinas, ao receber uma solicitação via `POST /transactions`, a aplicação precisa persistir a transação no MySQL e notificar os sistemas assíncronos via Kafka (`transactions.created.v1`).
+
+Em sistemas distribuídos, a tentativa de persistir no banco de dados e imediatamente publicar no message broker em operações sequenciais separadas (dual-write) incorre em falhas clássicas de consistência:
+1. Se a transação no MySQL for confirmada (`COMMIT`), mas a publicação no Kafka falhar por problemas de rede ou indisponibilidade do broker, a mensagem é perdida (*Cenário de Falha 1*).
+2. Se a publicação no Kafka for executada antes do commit no MySQL e a persistência falhar por violação de integridade ou queda de conexão, o broker processará um evento fantasma inexistente na base.
+3. O uso de Distributed Transactions / Two-Phase Commit (2PC) com XA não é suportado pelo Kafka e introduz alta latência e pontos únicos de falha.
+
+== Decisão
+
+Adotamos o padrão **Transactional Outbox**.
+
+1. Na mesma transação atômica do MySQL (ACID), inserimos o registro na tabela `transactions` com status inicial `PENDING` e um evento correspondente na tabela `outbox_events` com status `PENDING`.
+2. Um processo dedicado em background (*Outbox Publisher Worker*) executa polling na tabela `outbox_events` selecionando registros `PENDING` com `SELECT ... FOR UPDATE SKIP LOCKED`, publica no Kafka com confirmação estrita (`acks=all`) e atualiza o status do outbox para `PUBLISHED`.
+
+== Consequências
+
+=== Positivas
+- **Atomicidade e Consistência Garantidas**: Impossível criar a transação sem gravar o evento correspondente na outbox.
+- **Resiliência a Falhas de Mensageria**: Se o Kafka estiver temporariamente indisponível, os eventos permanecem na base do MySQL e serão publicados automaticamente após o restabelecimento da conexão.
+- **Entrega _At-Least-Once_**: Garante que nenhuma mensagem seja perdida entre o banco e o broker.
+
+=== Negativas / Trade-offs
+- **Complexidade Operacional**: Necessidade de manter e monitorar um processo worker em background para escoamento da outbox.
+- **Latência de Relay**: Introduz uma latência de polling (tipicamente de 50ms a 200ms) até o evento estar disponível no Kafka.
+- **Duplicações Potenciais**: Em caso de falha de rede imediatamente após o Kafka confirmar a escrita mas antes do worker atualizar o outbox para `PUBLISHED`, o evento poderá ser republicado, exigindo que o consumidor seja estritamente idempotente.

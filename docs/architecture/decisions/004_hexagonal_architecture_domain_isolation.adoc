@@ -1,0 +1,30 @@
+= ADR 004: Arquitetura Hexagonal e Isolamento de Domínio
+:status: Aceito
+:date: 2026-09-30
+:decision-makers: Time de Engenharia e Arquitetura
+
+== Contexto
+
+A plataforma financeira requer alta testabilidade, baixo acoplamento com tecnologias de infraestrutura (FastAPI, SQLAlchemy, Kafka, Redis) e capacidade de evoluir regras de negócio (como cálculo de limites e validação de risco) sem depender de frameworks externos.
+
+O acoplamento direto entre camadas web/mensageria e a persistência leva à dispersão da lógica de domínio em controllers ou listeners do Kafka, dificultando testes unitários rápidos e tornando refatorações arriscadas.
+
+== Decisão
+
+Adotamos os princípios da **Arquitetura Hexagonal (Ports and Adapters)** estruturada em:
+
+1. **`src/app/domain/` (Núcleo Puro)**: Contém as entidades (`Transaction`), agregados, value objects, exceptions de negócio e interfaces abstratas de portas (`TransactionRepositoryPort`, `MessagePublisherPort`, `RiskAnalysisClientPort`). Não possui nenhuma dependência externa de frameworks ou IO.
+2. **`src/app/application/` (Casos de Uso)**: Orquestra a execução das operações do sistema (`CreateTransactionUseCase`, `ProcessRiskAnalysisUseCase`, `GetTransactionUseCase`) e DTOs, dependendo exclusivamente das portas do domínio.
+3. **`src/app/infrastructure/` (Adaptadores Secundários / Driven)**: Implementações concretas de banco de dados (SQLAlchemy/MySQL), mensageria (Kafka Producer/Consumer), clientes HTTP com circuit breaker e cache (Redis).
+4. **`src/app/entrypoints/` (Adaptadores Primários / Driving)**: Controladores HTTP da API FastAPI, daemons de workers em background (Outbox e Consumer) e servidores mock.
+
+== Consequências
+
+=== Positivas
+- **Independência de Frameworks**: As regras de domínio e as transições da máquina de estados são puras e agnósticas à infraestrutura.
+- **Alta Testabilidade**: Casos de uso e entidades podem ser testados com 100% de cobertura unitária sem banco de dados ou Kafka levantados.
+- **Facilidade de Evolução**: Trocar ou atualizar componentes de infraestrutura (ex: migrar de JSON para Avro ou alterar o driver de banco) não altera a lógica de negócio.
+
+=== Negativas / Trade-offs
+- **Maior Número de Arquivos e Abstrações**: Exige mais código boilerplate (mapeadores, DTOs, classes de portas e adapters).
+- **Curva de Disciplina**: Requer garantia rigorosa de que regras de domínio não importem módulos de infraestrutura.

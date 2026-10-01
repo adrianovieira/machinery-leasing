@@ -1,0 +1,33 @@
+= ADR 002: Idempotência com Inbox Pattern e Garantia At-Least-Once
+:status: Aceito
+:date: 2026-09-30
+:decision-makers: Time de Engenharia e Arquitetura
+
+== Contexto
+
+O Apache Kafka e o padrão Transactional Outbox operam sob semântica de entrega **at-least-once**. Consequentemente, mensagens duplicadas podem chegar aos consumidores devido a:
+1. Rebalanceamento de partições no Consumer Group antes da confirmação do offset.
+2. Queda da aplicação ou falha de rede imediatamente após a gravação no MySQL, antes da chamada `consumer.commit()` no Kafka (*Cenário de Falha 2*).
+3. Republicações originadas pelo Outbox Relay em situações de timeout transitório (*Cenário de Falha 4*).
+
+Sem controle de idempotência, mensagens duplicadas causariam reexecuções indevidas de serviços externos de análise de risco (custos adicionais e inconsistências) e corrupção do ciclo de estados da transação.
+
+== Decisão
+
+Adotamos o padrão **Inbox Pattern** no consumidor com persistência relacional no MySQL:
+
+1. Criação da tabela `inbox_events` indexada pela chave primária `event_id`.
+2. Ao receber uma mensagem do Kafka, o consumidor inicia uma transação e tenta inserir um registro na tabela `inbox_events` com status `PROCESSING` e identificador do grupo consumidor.
+3. Se a chave primária já existir (`DuplicateKeyError`), a mensagem é identificada como duplicada, a execução de negócio e chamadas externas são descartadas, e o offset do Kafka é commitado com sucesso (ACK idempotente).
+4. O commit manual do offset do Kafka (`consumer.commit()`) é executado **estritamente após o commit transacional no MySQL**.
+
+== Consequências
+
+=== Positivas
+- **Idempotência Estrita**: Nenhuma ação com efeitos colaterais (IO externo ou atualização de banco) é reexecutada para a mesma mensagem.
+- **Tolerância a Crashes**: Se o consumidor morrer antes de commitar no Kafka, o novo consumidor descartará a mensagem sem refazer o processamento.
+- **Isolamento de Concorrência**: O lock a nível de chave primária impede que instâncias paralelas do mesmo grupo processem o mesmo evento.
+
+=== Negativas / Trade-offs
+- **Overhead de IO no MySQL**: Cada mensagem recebida gera uma escrita/verificação adicional na tabela `inbox_events`.
+- **Necessidade de Retenção/Purge**: A tabela `inbox_events` necessita de rotina periódica de arquivamento ou limpeza de registros antigos (ex: TTL de 30 dias).

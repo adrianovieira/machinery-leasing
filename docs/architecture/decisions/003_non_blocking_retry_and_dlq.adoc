@@ -1,0 +1,39 @@
+= ADR 003: Estratégia de Non-Blocking Retry e Dead Letter Queue (DLQ)
+:status: Aceito
+:date: 2026-09-30
+:decision-makers: Time de Engenharia e Arquitetura
+
+== Contexto
+
+O processamento assíncrono de transações depende de um serviço externo de análise de risco (`POST /risk-analysis`), que está sujeito a:
+1. Instabilidades transitórias de rede, picos de latência ou reinicializações.
+2. Indisponibilidades prolongadas (ex: 30 minutos sem resposta) (*Cenário de Falha 3*).
+3. Mensagens com erros estruturais de formato ou payloads corrompidos (*poison pills*).
+
+Estratégias ingênuas de retry (como loops bloqueantes `while(retry)` ou pausas na thread do consumidor) geram o problema de *Head-of-Line Blocking*, travando a partição do Kafka e impedindo que todas as demais transações saudáveis sejam processadas.
+
+== Decisão
+
+Adotamos a estratégia de **Non-Blocking Retry Topics com Backoff Exponencial e Dead Letter Queue (DLQ)**:
+
+1. **Retry Local Imediato**: Para falhas pontuais de socket, realizamos até 2 tentativas imediatas com jitter aleatório (50ms a 200ms).
+2. **Tópico de Retry Não Bloqueante (`transactions.retry.v1`)**: Se a falha persistir:
+   - A transação transiciona para o estado `RETRYING`.
+   - A mensagem é publicada no tópico de retry contendo metadados nos headers (`x-retry-count: N+1`, `x-next-retry-timestamp`).
+   - O offset da mensagem original na fila principal é commitado, liberando imediatamente o fluxo de outras transações.
+   - O consumidor de retry aplica backoff exponencial ($2^N \times \text{base}$) antes de reprocessar.
+3. **Dead Letter Queue (`transactions.dlq.v1`)**:
+   - Ao atingir o limite configurado (ex: 3 a 5 tentativas) ou em caso de erro fatal irrecuperável, a mensagem é roteada para a DLQ.
+   - A transação transiciona para o estado final `FAILED` e registra `failure_reason`.
+   - A DLQ mantém todas as informações necessárias para auditoria e reprocessamento operacional.
+
+== Consequências
+
+=== Positivas
+- **Eliminação de Bloqueios**: Indisponibilidades parciais não afetam o throughput de transações que não dependem daquele contexto imediato.
+- **Proteção da Infraestrutura Downstream**: O backoff exponencial evita amplificação de carga (*thundering herd*) contra o serviço externo em recuperação.
+- **Isolamento de Poison Pills**: Mensagens corrompidas vão para a DLQ sem interromper o serviço.
+
+=== Negativas / Trade-offs
+- **Reordenação de Eventos no Nível Global**: Mensagens em retry serão processadas fora da ordem sequencial estrita da partição (embora a ordem por cliente possa ser preservada pelo particionamento).
+- **Gerenciamento de Múltiplos Tópicos e Consumers**: Maior número de tópicos Kafka e lógica de headers a serem mantidos.
