@@ -1,0 +1,43 @@
+= ADR 005: Observabilidade com OpenTelemetry, Logs Estruturados, Métricas Prometheus e Carga Locust
+:status: Aceito
+:date: 2026-10-01
+:decision-makers: Time de Engenharia e Arquitetura
+
+== Contexto
+
+Com a arquitetura assíncrona composta por múltiplos componentes distribuídos (API REST, Transactional Outbox, Kafka Brokers com particionamento, Consumer Workers, Repositórios de Inbox e Serviço Externo de Análise de Risco), torna-se indispensável:
+1. **Rastreabilidade Ponta a Ponta com OpenTelemetry**: Adoção do padrão da indústria **W3C TraceContext (`traceparent`)** para correlacionar Spans distribuídos entre HTTP, eventos Kafka e chamadas externas.
+2. **Métricas Operacionais e de Negócio**: Visibilidade em tempo real sobre taxas de transferência, taxas de erro, latências de consumo, retentativas e mensagens enviadas para a Dead Letter Queue (DLQ) via Prometheus.
+3. **Validação de Carga e Escala**: Garantir que a infraestrutura suporte picos de carga (mínimo de 10.000 eventos/minuto) sem bloqueios (*Head-of-Line Blocking*), perdas de mensagens ou corrupção de estado.
+
+== Decisão
+
+Adotamos a seguinte arquitetura para Observabilidade e Escala:
+
+1. **Rastreamento Distribuído com OpenTelemetry (W3C TraceContext)**:
+   - Configuração de Tracer Provider com suporte a injeção/extração de cabeçalhos `traceparent` no FastAPI (HTTP Server), no Kafka Producer/Consumer (Headers de Mensagem) e no cliente HTTP da API de Risco (HTTP Client).
+   - Injeção automática de `trace_id` e `span_id` no formatador de logs JSON via `python-json-logger`.
+
+2. **Logs Estruturados em JSON Correlacionados**:
+   - Logs em JSON contendo timestamp ISO8601, nível, `trace_id`, `span_id`, `transaction_id` e `event_id`.
+
+3. **Métricas com Prometheus (`prometheus-client`)**:
+   - Exposição do endpoint padronizado `GET /metrics` na API FastAPI.
+   - Instrumentação de contadores para transações criadas, eventos publicados no Outbox, mensagens consumidas por status (`processed`, `duplicate_skipped`, `retried`, `dlq`) e histogramas de latência de processamento e avaliação de risco.
+
+4. **Health Checks e Probes**:
+   - `/health/live`: Liveness probe para orquestradores (Kubernetes / Docker Compose).
+   - `/health/ready`: Readiness probe verificando conexões ativas com MySQL e Kafka.
+
+5. **Simulação de Carga com Locust**:
+   - Script de teste de performance em `src/tests/performance/locustfile.py` simulando 10.000 requisições/minuto (~167 req/s), validando particionamento de tópicos Kafka e consistência do banco de dados sob concorrência.
+
+== Consequências
+
+=== Positivas
+- Rastreabilidade ponta a ponta padronizada e interoperável com ferramentas APM do mercado (Jaeger, Tempo, Datadog, Dynatrace).
+- Correlação direta entre Spans de Trace e linhas de log em JSON.
+- Monitoramento em tempo real com Prometheus e testes de estresse reproduzíveis via Locust.
+
+=== Negativas / Mitigações
+- Requer inclusão do pacote `opentelemetry-api` e `opentelemetry-sdk` no ambiente.
