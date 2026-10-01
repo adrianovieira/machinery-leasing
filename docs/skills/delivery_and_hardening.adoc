@@ -1,0 +1,64 @@
+---
+title: "Skill: Suite Completa de Testes, Refatoração, Hardening e Entrega"
+type: "skill"
+category: "delivery"
+status: "approved"
+related_specs:
+  - "specs/api_v1.yaml"
+  - "specs/events/transaction_created.json"
+  - "specs/events/transaction_status_changed.json"
+related_plans:
+  - "docs/plans/etapa_7_refatoracao_testes_entrega_plan.adoc"
+created_at: "2026-10-01"
+updated_at: "2026-10-01"
+---
+
+= Skill: Suite Completa de Testes, Refatoração, Hardening e Entrega
+
+Este documento estabelece as diretrizes técnicas, padrões de qualidade de código, estratégias de testes abrangentes (pirâmide de testes), automação de validação estática e os procedimentos operacionais para a consolidação e entrega final da plataforma de processamento de leasing.
+
+== 1. Visão Geral e Objetivos
+
+O objetivo desta skill é garantir que todo o ecossistema desenvolvido nas Etapas 0 a 6:
+1. Esteja estritamente alinhado aos contratos e princípios de arquitetura hexagonal.
+2. Possua cobertura de testes automatizados com execução determinística e sem _flakiness_.
+3. Apresente conformidade total de tipagem, formatação e boas práticas via `ruff` e Python 3.11+.
+4. Mantenha isolamento transacional estrito, sem vazamento de estado entre testes ou workers.
+5. Disponibilize documentação completa, instruções de execução via Docker Compose e scripts operacionais testados.
+
+== 2. Pirâmide e Estratégia de Testes
+
+=== 2.1. Testes de Contrato (`src/tests/contract/`)
+- Validação estrita do schema OpenAPI (`specs/api_v1.yaml`) e JSON Schemas de eventos Kafka.
+- Garantia de que modificações nos endpoints ou DTOs não introduzam _breaking changes_ nos contratos de dados.
+
+=== 2.2. Testes Unitários (`src/tests/unit/`)
+- Cobertura exaustiva de domínio puro (`Transaction`, `Money`, `TransactionStatus`, invariantes e transições).
+- Testes de regras de negócio isoladas (`ProcessRiskAnalysisUseCase`, `CreateTransactionUseCase`, `GetTransactionUseCase`).
+- Testes dos algoritmos de backoff exponencial, cálculo de jitter e regras de mascaramento de logs (PII/LGPD).
+- Testes do gerenciador de DLQ e formatação de mensagens.
+
+=== 2.3. Testes de Integração e Resiliência (`src/tests/integration/`)
+- **Persistência Atômica**: Verificação de rollback e consistência transacional do MySQL para transações e eventos de outbox.
+- **Idempotência (Inbox Pattern)**: Testes de concorrência e chave primária com deduplicação sob alta taxa de repetição.
+- **Cenários de Falha e Resiliência**:
+  * *Cenário 1 (Queda do Kafka)*: Persistência como `PENDING` na Outbox e posterior recuperação pelo worker.
+  * *Cenário 2 (Falha Transitória no Serviço de Risco)*: Retries locais via Tenacity e retries não-bloqueantes via Kafka.
+  * *Cenário 3 (Indisponibilidade Prolongada do Serviço de Risco)*: Esgotamento de retries, transição para `FAILED` e isolamento na DLQ sem impacto em transações saudáveis (*Head-of-Line Blocking*).
+  * *Cenário 4 (Garantia de Ordem Transacional)*: Offset Kafka confirmado estritamente após o commit no banco de dados.
+- **DLQ Replay e CLI**: Validação de ponta a ponta do script `dlq_replay.py` para reprocessamento seguro.
+
+=== 2.4. Testes de Carga e Performance (`src/tests/performance/`)
+- Script Locust com carga contínua (10.000 req/min) e aumento abrupto (*Spike test*).
+- Validação sintática e de importação automatizada integrada ao pipeline do `pytest`.
+
+== 3. Diretrizes de Hardening e Qualidade de Código
+
+1. **Ordenação e Limpeza de Imports**:
+   - Execução estrita do `ruff check --fix .` e `ruff format .`.
+   - Organização: 1. stdlib, 2. third-party, 3. imports locais do projeto.
+2. **Tratamento de Exceções e Logs Estruturados**:
+   - Ausência de blocos `except Exception: pass` silenciosos.
+   - Logs em formato JSON com `trace_id` e `span_id` injetados e mascaramento de dados sensíveis.
+3. **Gerenciamento de Recursos**:
+   - Fechamento correto de pools de conexão do MySQL, sockets HTTP e conexões do consumidor/produtor Kafka.

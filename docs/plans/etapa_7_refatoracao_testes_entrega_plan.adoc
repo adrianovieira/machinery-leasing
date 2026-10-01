@@ -1,0 +1,112 @@
+---
+title: "Plano de Implementação: Etapa 7 — Refatoração, Suite Completa de Testes e Entrega"
+type: "plan"
+phase: "completed"
+status: "done"
+skills_required:
+  - "docs/skills/delivery_and_hardening.adoc"
+  - "docs/skills/observability_and_scaling.md"
+  - "docs/skills/idempotency.md"
+  - "docs/skills/retry_dlq.md"
+  - "docs/skills/outbox_pattern.md"
+tools_required:
+  - "pytest"
+  - "pytest-cov"
+  - "ruff"
+  - "alembic"
+  - "docker-compose"
+dependencies:
+  - "docs/plans/etapa_0_fundacao_infraestrutura_plan.md"
+  - "docs/plans/etapa_1_contratos_modelagem_plan.md"
+  - "docs/plans/etapa_2_api_basica_persistencia_plan.md"
+  - "docs/plans/etapa_3_transactional_outbox_plan.md"
+  - "docs/plans/etapa_4_consumidor_idempotente_plan.md"
+  - "docs/plans/etapa_5_resiliencia_retries_dlq_plan.md"
+  - "docs/plans/etapa_6_observabilidade_escala_plan.md"
+acceptance_criteria:
+  - "Suíte completa de testes automatizados executando 100% com sucesso via pytest cobrindo contratos, unidade, integração, cenários de falha e performance."
+  - "Adição de testes de integração dedicados para o CLI e fluxo de reprocessamento de DLQ (DLQ Replay CLI)."
+  - "Refatoração e polimento de código com 100% de conformidade de formatação e linting via `ruff check` e `ruff format`."
+  - "Revisão e verificação da aderência integral à arquitetura hexagonal."
+  - "Atualização do System Design (`docs/architecture/system_design.adoc`) incluindo a referência ao ADR 005 (Observabilidade e OpenTelemetry) e ADRs anteriores."
+  - "Criação do README.md completo do projeto com instruções de arquitetura, execução via Docker Compose, endpoints de API, workers, métricas Prometheus e comandos operacionais de DLQ."
+  - "Apresentação estruturada dos commits convencionais para aprovação prévia do usuário."
+created_at: "2026-10-01"
+updated_at: "2026-10-01"
+---
+
+= Plano de Implementação: Etapa 7 — Refatoração, Suite Completa de Testes e Entrega
+
+Este documento estabelece o plano formal de execução da **Etapa 7**, consolidando o ciclo de desenvolvimento através de refatoração, expansão da suíte de testes (com foco em cobertura de ferramentas operacionais e cenários de borda), atualização documental integral e preparação para entrega da plataforma.
+
+== 1. Contexto e Especificações Relacionadas
+
+* **Especificações e Contratos**:
+  ** link:../../specs/api_v1.yaml[specs/api_v1.yaml]
+  ** link:../../specs/events/transaction_created.json[specs/events/transaction_created.json]
+  ** link:../../specs/events/transaction_status_changed.json[specs/events/transaction_status_changed.json]
+* **Skills de Engenharia**:
+  ** link:../skills/delivery_and_hardening.adoc[docs/skills/delivery_and_hardening.adoc]
+  ** link:../skills/observability_and_scaling.md[docs/skills/observability_and_scaling.md]
+  ** link:../skills/retry_dlq.md[docs/skills/retry_dlq.md]
+  ** link:../skills/idempotency.md[docs/skills/idempotency.md]
+  ** link:../skills/outbox_pattern.md[docs/skills/outbox_pattern.md]
+* **Architecture Decision Records**:
+  ** link:../architecture/decisions/001_transactional_outbox_pattern.adoc[ADR 001: Transactional Outbox]
+  ** link:../architecture/decisions/002_idempotency_and_inbox_pattern.adoc[ADR 002: Idempotência e Inbox Pattern]
+  ** link:../architecture/decisions/003_non_blocking_retry_and_dlq.adoc[ADR 003: Non-Blocking Retry e DLQ]
+  ** link:../architecture/decisions/004_hexagonal_architecture_domain_isolation.adoc[ADR 004: Arquitetura Hexagonal]
+  ** link:../architecture/decisions/005_observability_metrics_and_load_testing.adoc[ADR 005: Observabilidade e OpenTelemetry]
+
+== 2. Escopo e Detalhamento da Execução
+
+=== 2.1. Expansão de Testes Automatizados
+1. **Teste de Integração do CLI de DLQ Replay (`src/tests/integration/test_dlq_replay_cli.py`)**:
+   * Validar execução da interface de linha de comando (`dlq_replay.py`) com argumentos `--list` e `--replay-all`.
+   * Verificar recuperação de mensagens do tópico `transactions.dlq.v1`, reinicialização de status no `inbox_events` e reenvio atômico para `transactions.created.v1`.
+2. **Auditoria Geral de Testes de Contrato, Unitários e de Integração**:
+   * Garantir que todas as branches e cenários críticos (idempotência, transactional outbox, retries exponenciais, DLQ, OpenTelemetry e métricas) executem em < 10 segundos com isolamento in-memory.
+
+=== 2.2. Refatoração, Limpeza e Hardening de Código
+1. **Auditoria de Código com Ruff**:
+   * Executar `pipenv run ruff check --fix .` e `pipenv run ruff format .` em todos os módulos (`src/app/`, `src/tests/`, `scripts/`).
+   * Garantir ordenação estrita de imports: (1) stdlib, (2) third-party, (3) local app.
+2. **Polimento de Tipagem e Tratamento de Erros**:
+   * Revisão de type annotations e docstrings em todas as classes e funções públicas.
+   * Fechamento seguro de recursos e garantia de ausência de deadlocks.
+
+=== 2.3. Consolidação Documental e Guia de Execução (README.md)
+1. **Atualização do System Design (`docs/architecture/system_design.adoc`)**:
+   * Incluir link e referência formal ao `ADR 005: Observabilidade com OpenTelemetry, Métricas Prometheus e Carga Locust`.
+2. **Criação do README.md Principal**:
+   * Apresentação da arquitetura e decisões de engenharia.
+   * Guia "Como Executar":
+     ** Subir infraestrutura (`docker compose up -d`).
+     ** Aplicar migrations (`pipenv run alembic upgrade head`).
+     ** Iniciar API HTTP (`pipenv run uvicorn src.app.entrypoints.api.main:app`).
+     ** Iniciar Workers (`OutboxPublisherWorker`, `TransactionConsumerWorker`, `RetryConsumerWorker`).
+     ** Executar CLI de DLQ Replay.
+     ** Rodar testes e cobertura (`pipenv run pytest`).
+     ** Rodar testes de carga com Locust (`pipenv run locust -f src/tests/performance/locustfile.py`).
+
+== 3. Roteiro Passo a Passo de Execução
+
+|===
+| Passo | Componente | Arquivo(s) | Ação
+
+| *3.1* | Testes de Integração CLI | `src/tests/integration/test_dlq_replay_cli.py` | Implementar teste automatizado para o utilitário CLI de DLQ Replay.
+| *3.2* | Formatação & Linting | Todos os arquivos Python | Executar `ruff check --fix` e `ruff format` para conformidade total.
+| *3.3* | Validação de Testes e Cobertura | `src/tests/` | Executar suíte completa via `pytest` com relatório de cobertura.
+| *3.4* | Atualização Documental | `docs/architecture/system_design.adoc` | Registrar ADR 005 no sumário de ADRs.
+| *3.5* | Criação do README.md | `README.md` | Documentar visão geral, arquitetura, setup rápido, execução de workers, API e métricas.
+| *3.6* | Proposta de Commits | Git | Apresentar commits estruturados para aprovação prévia.
+|===
+
+== 4. Critérios de Aceite
+
+* [ ] Teste `test_dlq_replay_cli.py` implementado e integrado à suíte do pytest.
+* [ ] 100% dos testes passando sem falhas (`pytest`).
+* [ ] 100% de conformidade com o linter (`ruff check` e `ruff format`).
+* [ ] `docs/architecture/system_design.adoc` atualizado com link para ADR 005.
+* [ ] `README.md` completo e didático criado na raiz do repositório.
+* [ ] Proposta de commits convencionais apresentada para aprovação do usuário antes de efetivar no Git.

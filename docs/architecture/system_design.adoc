@@ -52,3 +52,4 @@ As decisões fundamentais e os trade-offs de engenharia estão formalizados nos 
 * link:decisions/002_idempotency_and_inbox_pattern.adoc[ADR 002: Idempotência com Inbox Pattern e Garantia At-Least-Once]
 * link:decisions/003_non_blocking_retry_and_dlq.adoc[ADR 003: Estratégia de Non-Blocking Retry e Dead Letter Queue (DLQ)]
 * link:decisions/004_hexagonal_architecture_domain_isolation.adoc[ADR 004: Arquitetura Hexagonal e Isolamento de Domínio]
+* link:decisions/005_observability_metrics_and_load_testing.adoc[ADR 005: Observabilidade com OpenTelemetry, Métricas Prometheus e Carga Locust]
