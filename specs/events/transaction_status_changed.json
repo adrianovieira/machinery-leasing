@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TransactionStatusChangedEvent",
+  "description": "Evento emitido para notificar sistemas downstream sobre transições de estado da transação.",
+  "type": "object",
+  "required": ["event_id", "event_type", "aggregate_id", "timestamp", "version", "data"],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Identificador único do evento."
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["TRANSACTION_STATUS_CHANGED"],
+      "description": "Tipo estrito do evento."
+    },
+    "aggregate_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Identificador único da transação."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp ISO-8601 UTC da mudança de status."
+    },
+    "version": {
+      "type": "string",
+      "enum": ["v1"],
+      "description": "Versão do contrato do evento."
+    },
+    "data": {
+      "type": "object",
+      "required": ["transaction_id", "customer_id", "old_status", "new_status"],
+      "properties": {
+        "transaction_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "ID da transação modificada."
+        },
+        "customer_id": {
+          "type": "string",
+          "description": "ID do cliente."
+        },
+        "old_status": {
+          "type": "string",
+          "enum": ["PENDING", "PROCESSING", "RETRYING"],
+          "description": "Status anterior da transação."
+        },
+        "new_status": {
+          "type": "string",
+          "enum": ["APPROVED", "REJECTED", "RETRYING", "FAILED"],
+          "description": "Novo status assumido pela transação."
+        },
+        "reason": {
+          "type": ["string", "null"],
+          "description": "Motivo descritivo em caso de rejeição ou falha."
+        }
+      }
+    }
+  }
+}

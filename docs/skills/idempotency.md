@@ -36,20 +36,22 @@ def process_kafka_message(msg):
             inbox_entry = InboxEventModel(
                 event_id=event_id,
                 consumer_group="machinery-leasing-consumer",
-                status='PROCESSING'
+                status="PROCESSING",
             )
             session.add(inbox_entry)
             session.flush()  # Força validação de PK
         except IntegrityError:
             # Chave primária duplicada detectada!
             session.rollback()
-            logger.info(f"Mensagem duplicada detectada {event_id}. Ignorando reexecução.")
+            logger.info(
+                f"Mensagem duplicada detectada {event_id}. Ignorando reexecução."
+            )
             consumer.commit(msg)  # Confirma offset e sai sem chamar serviço externo
             return
 
         # 2. Transição da transação para PROCESSING
         tx = session.query(TransactionModel).filter_by(id=tx_id).one()
-        tx.status = 'PROCESSING'
+        tx.status = "PROCESSING"
         session.commit()
 
     # 3. Execução da regra de negócio externa (fora de transação de longa duração)
@@ -61,11 +63,11 @@ def process_kafka_message(msg):
         inbox_entry = session.query(InboxEventModel).filter_by(event_id=event_id).one()
 
         if risk_decision.approved:
-            tx.status = 'APPROVED'
+            tx.status = "APPROVED"
         else:
-            tx.status = 'REJECTED'
+            tx.status = "REJECTED"
 
-        inbox_entry.status = 'COMPLETED'
+        inbox_entry.status = "COMPLETED"
         session.commit()
 
     # 5. Commit manual do offset estritamente após o commit no MySQL

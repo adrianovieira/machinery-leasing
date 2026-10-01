@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TransactionCreatedEvent",
+  "description": "Evento emitido quando uma nova transação financeira é criada e persistida no sistema.",
+  "type": "object",
+  "required": ["event_id", "event_type", "aggregate_id", "timestamp", "version", "data"],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Identificador único do evento para garantia de idempotência no Inbox."
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["TRANSACTION_CREATED"],
+      "description": "Tipo estrito do evento."
+    },
+    "aggregate_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Identificador único da transação (chave de agregação/particionamento)."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp ISO-8601 UTC do momento da criação do evento."
+    },
+    "version": {
+      "type": "string",
+      "enum": ["v1"],
+      "description": "Versão do contrato do evento."
+    },
+    "data": {
+      "type": "object",
+      "required": ["transaction_id", "customer_id", "value", "status"],
+      "properties": {
+        "transaction_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "ID da transação criada."
+        },
+        "customer_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "ID do cliente solicitante."
+        },
+        "value": {
+          "type": "number",
+          "minimum": 0.01,
+          "description": "Valor monetário da transação de leasing."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["PENDING"],
+          "description": "Status inicial da transação ao ser criada."
+        }
+      }
+    }
+  }
+}

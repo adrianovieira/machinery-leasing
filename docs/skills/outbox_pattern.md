@@ -35,12 +35,14 @@ def outbox_polling_loop():
     while running:
         with session_scope() as session:
             # 1. Lock pessimista não bloqueante com concorrência segura
-            pending_events = session.query(OutboxEventModel)\
-                .filter(OutboxEventModel.status == 'PENDING')\
-                .order_by(OutboxEventModel.created_at.asc())\
-                .limit(BATCH_SIZE)\
-                .with_for_update(skip_locked=True)\
+            pending_events = (
+                session.query(OutboxEventModel)
+                .filter(OutboxEventModel.status == "PENDING")
+                .order_by(OutboxEventModel.created_at.asc())
+                .limit(BATCH_SIZE)
+                .with_for_update(skip_locked=True)
                 .all()
+            )
 
             if not pending_events:
                 time.sleep(POLL_INTERVAL_SECONDS)
@@ -51,22 +53,22 @@ def outbox_polling_loop():
                 try:
                     kafka_producer.produce(
                         topic=event.topic,
-                        key=event.aggregate_id.encode('utf-8'),
-                        value=json.dumps(event.payload).encode('utf-8'),
-                        headers=[("x-event-id", event.id.encode('utf-8'))]
+                        key=event.aggregate_id.encode("utf-8"),
+                        value=json.dumps(event.payload).encode("utf-8"),
+                        headers=[("x-event-id", event.id.encode("utf-8"))],
                     )
                     kafka_producer.flush(timeout=5.0)
-                    
+
                     # 3. Marcação de sucesso
-                    event.status = 'PUBLISHED'
+                    event.status = "PUBLISHED"
                     event.published_at = datetime.utcnow()
                 except KafkaError as exc:
                     logger.error(f"Erro ao publicar outbox {event.id}: {exc}")
                     event.retry_count += 1
                     if event.retry_count >= MAX_OUTBOX_RETRIES:
-                        event.status = 'FAILED'
+                        event.status = "FAILED"
                     break  # Pausa lote e tenta novamente no próximo ciclo
-            
+
             session.commit()
 ```
 

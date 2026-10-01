@@ -45,8 +45,11 @@ import random
 import time
 from datetime import datetime, timedelta
 
-def calculate_next_retry(retry_count: int, base_seconds: float = 2.0, max_seconds: float = 60.0) -> datetime:
-    exponential_delay = min(max_seconds, base_seconds * (2 ** retry_count))
+
+def calculate_next_retry(
+    retry_count: int, base_seconds: float = 2.0, max_seconds: float = 60.0
+) -> datetime:
+    exponential_delay = min(max_seconds, base_seconds * (2**retry_count))
     jitter = random.uniform(0.1, 1.0)
     total_delay = exponential_delay + jitter
     return datetime.utcnow() + timedelta(seconds=total_delay)
@@ -66,7 +69,7 @@ def handle_consumer_exception(msg, exc, tx_id, event_id):
 
         with session_scope() as session:
             tx = session.query(TransactionModel).filter_by(id=tx_id).one()
-            tx.status = 'RETRYING'
+            tx.status = "RETRYING"
             session.commit()
 
         # Publica no tópico de retry com headers de controle
@@ -77,8 +80,8 @@ def handle_consumer_exception(msg, exc, tx_id, event_id):
             headers=[
                 ("x-retry-count", str(next_attempt_count).encode()),
                 ("x-next-retry-timestamp", next_retry_time.isoformat().encode()),
-                ("x-event-id", event_id.encode())
-            ]
+                ("x-event-id", event_id.encode()),
+            ],
         )
         kafka_producer.flush()
         consumer.commit(msg)  # Libera a mensagem da fila original
@@ -87,12 +90,16 @@ def handle_consumer_exception(msg, exc, tx_id, event_id):
         # Falha fatal, poison pill ou limite de retries esgotado
         with session_scope() as session:
             tx = session.query(TransactionModel).filter_by(id=tx_id).one()
-            tx.status = 'FAILED'
+            tx.status = "FAILED"
             tx.failure_reason = str(exc)[:255]
-            
-            inbox_entry = session.query(InboxEventModel).filter_by(event_id=event_id).one_or_none()
+
+            inbox_entry = (
+                session.query(InboxEventModel)
+                .filter_by(event_id=event_id)
+                .one_or_none()
+            )
             if inbox_entry:
-                inbox_entry.status = 'FAILED'
+                inbox_entry.status = "FAILED"
             session.commit()
 
         kafka_producer.produce(
@@ -102,8 +109,8 @@ def handle_consumer_exception(msg, exc, tx_id, event_id):
             headers=[
                 ("x-retry-count", str(current_retries).encode()),
                 ("x-exception-type", exc.__class__.__name__.encode()),
-                ("x-exception-message", str(exc).encode())
-            ]
+                ("x-exception-message", str(exc).encode()),
+            ],
         )
         kafka_producer.flush()
         consumer.commit(msg)
