@@ -8,7 +8,7 @@ Este documento define os padrões, a estrutura de arquivos e o modelo operaciona
 2. **Resiliência & Determinismo**: Todo fluxo assíncrono deve suportar entrega _at-least-once_, falhas parciais de dependências externas e garantir idempotência estrita.
 3. **Padrão Documental**:
    - Documentação técnica e especificações estruturadas em **AsciiDoc** (`.adoc`).
-   - Diagramas arquiteturais e de sequência gerados exclusivamente em **PlantUML** (`.puml`) localizados na pasta `diagrams/` e incluídos via diretiva `include::`.
+   - Diagramas arquiteturais e de sequência gerados exclusivamente em **PlantUML** (`.puml`) localizados na pasta `docs/diagrams/` e incluídos via diretiva `include::`.
 
 ---
 
