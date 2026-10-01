@@ -1,0 +1,73 @@
+@startuml transaction_outbox_sequence
+autonumber
+skinparam responseMessageBelowArrow true
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+actor "Cliente / Integrador" as Client
+box "API HTTP (FastAPI)" #LightCyan
+    participant "TransactionsController" as API
+    participant "CreateTransactionUseCase" as UseCase
+    participant "MySQLTransactionRepository" as Repo
+end box
+
+database "MySQL Database" as DB #LightYellow
+box "Outbox Publisher Daemon" #LightGreen
+    participant "OutboxPublisherWorker" as OutboxWorker
+end box
+queue "Apache Kafka\n(transactions.created.v1)" as Kafka #LightSkyBlue
+
+== Criação Síncrona com Persistência Atômica ==
+
+Client -> API: POST /transactions\n{"customer_id": "123", "value": 1500.00}
+activate API
+
+API -> UseCase: execute(CreateTransactionCommand)
+activate UseCase
+
+UseCase -> UseCase: Gera UUIDv4 (id)\nCria Transaction(status=PENDING)\nCria OutboxEvent(status=PENDING)
+
+UseCase -> Repo: save_transaction_with_outbox(tx, outbox_event)
+activate Repo
+
+Repo -> DB: BEGIN TRANSACTION
+Repo -> DB: INSERT INTO transactions (id, customer_id, value, status='PENDING')
+Repo -> DB: INSERT INTO outbox_events (id, aggregate_id, topic, payload, status='PENDING')
+Repo -> DB: COMMIT
+DB --> Repo: Transação persistida com sucesso
+
+Repo --> UseCase: Success
+deactivate Repo
+
+UseCase --> API: TransactionCreatedDTO(id, status='PENDING')
+deactivate UseCase
+
+API --> Client: HTTP 201 Created\n{"id": "...", "status": "PENDING", "customer_id": "123", "value": 1500.00}
+deactivate API
+
+== Relay Assíncrono da Outbox (Background Polling) ==
+
+loop A cada intervalo configurado (ex: 200ms)
+    OutboxWorker -> DB: SELECT * FROM outbox_events\nWHERE status = 'PENDING'\nORDER BY created_at ASC\nLIMIT 50 FOR UPDATE SKIP LOCKED
+    activate OutboxWorker
+    activate DB
+    DB --> OutboxWorker: Lista de eventos pendentes
+    deactivate DB
+
+    alt Existem eventos pendentes
+        loop Para cada evento pendente
+            OutboxWorker -> Kafka: produce(topic='transactions.created.v1',\nkey=customer_id, value=payload, acks=all)
+            activate Kafka
+            Kafka --> OutboxWorker: Ack confirmado (partition, offset)
+            deactivate Kafka
+
+            OutboxWorker -> DB: UPDATE outbox_events\nSET status = 'PUBLISHED', published_at = NOW()\nWHERE id = event.id
+            activate DB
+            DB --> OutboxWorker: Evento atualizado
+            deactivate DB
+        end
+    end
+    deactivate OutboxWorker
+end
+
+@enduml

@@ -1,0 +1,118 @@
+@startuml consumer_retry_dlq_sequence
+autonumber
+skinparam responseMessageBelowArrow true
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+queue "Kafka\n(transactions.created.v1 / retry.v1)" as KafkaIn #LightSkyBlue
+box "Transaction Consumer Worker" #LightGreen
+    participant "KafkaConsumerListener" as Consumer
+    participant "InboxIdempotencyManager" as Inbox
+    participant "ProcessRiskAnalysisUseCase" as UseCase
+    participant "ExternalRiskClient" as RiskClient
+end box
+
+participant "Serviço Externo\nde Análise de Risco" as RiskAPI #Pink
+database "MySQL Database" as DB #LightYellow
+queue "Kafka\n(transactions.retry.v1)" as KafkaRetry #Orange
+queue "Kafka\n(transactions.dlq.v1)" as KafkaDLQ #Tomato
+queue "Kafka\n(transactions.status.v1)" as KafkaStatus #LightSkyBlue
+
+== Consumo de Mensagem e Verificação de Idempotência ==
+
+KafkaIn -> Consumer: poll() -> Mensagem recebida (event_id, payload)
+activate Consumer
+
+Consumer -> Inbox: acquire_lock_or_check(event_id, consumer_group='tx-consumer')
+activate Inbox
+
+Inbox -> DB: BEGIN TRANSACTION\nINSERT INTO inbox_events (event_id, consumer_group, status='PROCESSING')
+activate DB
+
+alt Chave primária já existe (Mensagem Duplicada / Rebalance)
+    DB --> Inbox: DuplicateKeyError / Chave já existente
+    Inbox -> DB: ROLLBACK
+    deactivate DB
+    Inbox --> Consumer: AlreadyProcessedException (Ignora execução)
+    Consumer -> KafkaIn: commit_offset()
+    note right of Consumer: Idempotência garantida: encerra sem chamar serviço externo
+else Registro inserido com sucesso (Primeira execução)
+    DB --> Inbox: Inserção confirmada
+    deactivate DB
+    Inbox --> Consumer: Lock adquirido com sucesso
+    deactivate Inbox
+
+    Consumer -> DB: UPDATE transactions SET status = 'PROCESSING' WHERE id = tx_id
+    
+    Consumer -> UseCase: execute(tx_id, payload)
+    activate UseCase
+
+    UseCase -> RiskClient: analyze_risk(customer_id, value)
+    activate RiskClient
+    RiskClient -> RiskAPI: POST /risk-analysis
+    activate RiskAPI
+
+    == Cenário A: Sucesso na Análise de Risco (APPROVED / REJECTED) ==
+    alt Resposta 200 OK (APPROVED ou REJECTED)
+        RiskAPI --> RiskClient: {"result": "APPROVED"} (ou REJECTED)
+        deactivate RiskAPI
+        RiskClient --> UseCase: RiskDecision(APPROVED)
+        deactivate RiskClient
+
+        UseCase -> DB: BEGIN TRANSACTION\nUPDATE transactions SET status = 'APPROVED' WHERE id = tx_id;\nINSERT INTO outbox_events (topic='transactions.status.v1', payload=...);\nUPDATE inbox_events SET status = 'COMPLETED' WHERE event_id = event_id;\nCOMMIT;
+        activate DB
+        DB --> UseCase: Commit confirmado
+        deactivate DB
+
+        UseCase --> Consumer: Success
+        deactivate UseCase
+
+        Consumer -> KafkaIn: commit_offset()
+        note over Consumer, DB: Commit do offset Kafka realizado estritamente após o MySQL
+
+    == Cenário B: Falha Transitória / Timeout (Envio para Retry Topic) ==
+    else Timeout / Erro 503 (Tentativa < MaxRetries)
+        RiskAPI --> RiskClient: HTTP 504 Timeout / SocketError
+        deactivate RiskAPI
+        activate RiskClient
+        RiskClient --> UseCase: TransientRiskServiceException
+        deactivate RiskClient
+        activate UseCase
+
+        UseCase -> DB: BEGIN TRANSACTION\nUPDATE transactions SET status = 'RETRYING' WHERE id = tx_id;\nUPDATE inbox_events SET status = 'RETRYING' WHERE event_id = event_id;\nCOMMIT;
+        activate DB
+        DB --> UseCase: Commit confirmado
+        deactivate DB
+
+        UseCase -> KafkaRetry: produce(topic='transactions.retry.v1',\nheaders={x-retry-count: N+1, x-next-retry: timestamp})
+        activate KafkaRetry
+        KafkaRetry --> UseCase: Ack
+        deactivate KafkaRetry
+
+        UseCase --> Consumer: Reprocessamento Agendado
+        deactivate UseCase
+
+        Consumer -> KafkaIn: commit_offset()
+
+    == Cenário C: Falha Definitiva / Esgotamento de Retries (Envio para DLQ) ==
+    else Falha Persistente (Tentativa >= MaxRetries) ou Poison Pill
+        activate UseCase
+        UseCase -> DB: BEGIN TRANSACTION\nUPDATE transactions SET status = 'FAILED', failure_reason = 'Max retries exceeded' WHERE id = tx_id;\nUPDATE inbox_events SET status = 'FAILED' WHERE event_id = event_id;\nCOMMIT;
+        activate DB
+        DB --> UseCase: Commit confirmado
+        deactivate DB
+
+        UseCase -> KafkaDLQ: produce(topic='transactions.dlq.v1',\nheaders={x-exception: 'RiskServiceTimeout', x-retry-count: Max})
+        activate KafkaDLQ
+        KafkaDLQ --> UseCase: Ack
+        deactivate KafkaDLQ
+
+        UseCase --> Consumer: Encaminhado para DLQ
+        deactivate UseCase
+
+        Consumer -> KafkaIn: commit_offset()
+    end
+end
+deactivate Consumer
+
+@enduml

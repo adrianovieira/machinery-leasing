@@ -25,3 +25,21 @@ O diagrama a seguir detalha a divisão dos componentes do sistema, isolando os a
 ----
 include::../diagrams/architecture_overview.puml[]
 ----
+
+== Fluxo Síncrono e Transactional Outbox
+
+O diagrama de sequência abaixo ilustra a criação atômica da transação no banco de dados e a garantia de publicação _at-least-once_ através do worker de outbox independente.
+
+[plantuml, transaction_outbox_sequence, align="center"]
+----
+include::../diagrams/transaction_outbox_sequence.puml[]
+----
+
+== Fluxo Assíncrono, Idempotência (Inbox) e Estratégia de Retry / DLQ
+
+O processamento assíncrono das transações contempla proteção contra duplicação de mensagens, tolerância a falhas do serviço externo de análise de risco e roteamento não bloqueante para tópicos de retry e DLQ.
+
+[plantuml, consumer_retry_dlq_sequence, align="center"]
+----
+include::../diagrams/consumer_retry_dlq_sequence.puml[]
+----
