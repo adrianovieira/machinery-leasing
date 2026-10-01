@@ -1,7 +1,7 @@
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra -q"
-testpaths = ["src/tests"]
+addopts = "-ra -q -p no:locust"
+testpaths = ["src/tests/unit", "src/tests/contract", "src/tests/integration"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 
