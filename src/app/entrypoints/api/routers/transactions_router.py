@@ -1,10 +1,10 @@
 from fastapi import APIRouter, status
 
-from src.app.application.dtos.transaction_dtos import (
+from app.application.dtos.transaction_dtos import (
     CreateTransactionRequestDTO,
     TransactionResponseDTO,
 )
-from src.app.entrypoints.api.dependencies import (
+from app.entrypoints.api.dependencies import (
     CreateTxUseCaseDep,
     GetTxUseCaseDep,
 )
