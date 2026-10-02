@@ -126,3 +126,20 @@ class OutboxPublisherWorker:
         """Para a execução do daemon."""
         self._running = False
         logger.info("OutboxPublisherWorker finalizando...")
+
+
+def main():
+    """Ponto de entrada para execução do worker como processo independente."""
+    from app.infrastructure.messaging.kafka_producer_adapter import (
+        KafkaProducerAdapter,
+    )
+    from app.infrastructure.observability.logging import configure_logging
+
+    configure_logging()
+    producer = KafkaProducerAdapter()
+    worker = OutboxPublisherWorker(producer=producer)
+    worker.start()
+
+
+if __name__ == "__main__":
+    main()

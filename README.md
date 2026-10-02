@@ -49,19 +49,33 @@ A documentação arquitetural completa está localizada em `docs/`:
 pipenv install --dev
 ```
 
-### 2. Subir a Infraestrutura (MySQL, Kafka, Redis)
+### 2. Executar Toda a Plataforma via Docker Compose (Recomendado)
+
+Os serviços da aplicação e workers estão agrupados sob o profile `app`. Você pode subir toda a stack com:
 
 ```bash
-# Inicializa os containers de MySQL 8.0, Kafka KRaft e Redis
-docker compose up -d
+# Constrói e inicializa todos os containers (infraestrutura + aplicação com profile 'app')
+docker compose --profile app up --build -d
 
-# Validar saúde dos serviços
-pipenv run python scripts/check_infra.py
+# Visualizar status de todos os serviços
+docker compose --profile app ps
+
+# Acompanhar logs integrados dos workers e da API
+docker compose --profile app logs -f api worker-outbox worker-transaction-consumer worker-retry-consumer
 ```
 
-### 3. Aplicar Migrações do Banco de Dados (Alembic)
+### 3. Modo Desenvolvimento Local (Apenas Infraestrutura)
+
+Se preferir executar apenas a infraestrutura básica (MySQL, Kafka, Redis) e rodar a aplicação localmente via `pipenv`:
 
 ```bash
+# 1. Subir apenas a infraestrutura padrão (sem o profile app)
+docker compose up -d
+
+# 2. Validar saúde dos serviços
+pipenv run python scripts/check_infra.py
+
+# 3. Aplicar migrações do banco
 pipenv run alembic upgrade head
 ```
 

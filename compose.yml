@@ -1,7 +1,6 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: leasing-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: root_pass
@@ -17,19 +16,20 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    networks:
+      - leasing-network
 
   kafka:
     image: apache/kafka:3.8.0
-    container_name: leasing-kafka
     restart: unless-stopped
     environment:
       # Configurações KRaft (sem ZooKeeper)
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
@@ -45,10 +45,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      - leasing-network
 
   redis:
     image: redis:7.2-alpine
-    container_name: leasing-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -59,8 +60,171 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - leasing-network
+
+  mock-risk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: mock
+    restart: unless-stopped
+    command: ["uvicorn", "mocks.mock_risk_service:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - leasing-network
+
+
+  migration:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migration
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: mysql+pymysql://leasing_user:leasing_pass@mysql:3306/leasing_db
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - leasing-network
+    restart: "no"
+
+  api:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    restart: unless-stopped
+    command: ["uvicorn", "app.entrypoints.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    environment:
+      APP_NAME: machinery-leasing-platform
+      APP_ENV: production
+      LOG_LEVEL: INFO
+      DATABASE_URL: mysql+pymysql://leasing_user:leasing_pass@mysql:3306/leasing_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_GROUP_ID: machinery-leasing-consumer-group
+      KAFKA_TOPIC_CREATED: transactions.created.v1
+      KAFKA_TOPIC_RETRY: transactions.retry.v1
+      KAFKA_TOPIC_DLQ: transactions.dlq.v1
+      KAFKA_TOPIC_STATUS: transactions.status.v1
+      REDIS_URL: redis://redis:6379/0
+      RISK_SERVICE_URL: http://mock-risk:8001
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - leasing-network
+
+  worker-outbox:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    restart: unless-stopped
+    command: ["python", "-m", "app.entrypoints.workers.outbox_publisher_worker"]
+    environment:
+      DATABASE_URL: mysql+pymysql://leasing_user:leasing_pass@mysql:3306/leasing_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_CREATED: transactions.created.v1
+      LOG_LEVEL: INFO
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    networks:
+      - leasing-network
+
+  worker-transaction-consumer:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    restart: unless-stopped
+    command: ["python", "-m", "app.entrypoints.workers.transaction_consumer_worker"]
+    environment:
+      DATABASE_URL: mysql+pymysql://leasing_user:leasing_pass@mysql:3306/leasing_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_GROUP_ID: machinery-leasing-consumer-group
+      KAFKA_TOPIC_CREATED: transactions.created.v1
+      KAFKA_TOPIC_RETRY: transactions.retry.v1
+      KAFKA_TOPIC_DLQ: transactions.dlq.v1
+      RISK_SERVICE_URL: http://mock-risk:8001
+      LOG_LEVEL: INFO
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      mock-risk:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    networks:
+      - leasing-network
+
+  worker-retry-consumer:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    restart: unless-stopped
+    command: ["python", "-m", "app.entrypoints.workers.retry_consumer_worker"]
+    environment:
+      DATABASE_URL: mysql+pymysql://leasing_user:leasing_pass@mysql:3306/leasing_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_GROUP_ID: machinery-leasing-retry-group
+      KAFKA_TOPIC_CREATED: transactions.created.v1
+      KAFKA_TOPIC_RETRY: transactions.retry.v1
+      KAFKA_TOPIC_DLQ: transactions.dlq.v1
+      RISK_SERVICE_URL: http://mock-risk:8001
+      LOG_LEVEL: INFO
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      mock-risk:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    networks:
+      - leasing-network
 
 volumes:
   mysql_data:
   kafka_data:
   redis_data:
+
+networks:
+  leasing-network:
+    driver: bridge

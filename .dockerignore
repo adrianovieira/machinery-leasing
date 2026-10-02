@@ -1,0 +1,26 @@
+# Deny everything by default
+*
+**/*
+
+# Explicitly allow build and dependencies manifests
+!Pipfile
+!Pipfile.lock
+
+# Explicitly allow Alembic configuration and migrations
+!alembic.ini
+!alembic/
+!alembic/**
+
+# Explicitly allow source code and mocks
+!src/
+!src/app/
+!src/app/**
+!mocks/
+!mocks/**
+
+# Re-ignore pycache and test artifacts that may exist inside allowed folders
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.coverage

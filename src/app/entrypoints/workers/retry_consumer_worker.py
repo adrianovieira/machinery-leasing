@@ -341,3 +341,60 @@ class RetryConsumerWorker:
         self._running = False
         self._consumer.close()
         logger.info("RetryConsumerWorker finalizado.")
+
+
+def main():
+    """Ponto de entrada para execução do worker consumidor de retries."""
+    import os
+
+    from app.application.use_cases.process_risk_analysis_use_case import (
+        ProcessRiskAnalysisUseCase,
+    )
+    from app.infrastructure.external_services.http_risk_client_adapter import (
+        HttpRiskClientAdapter,
+    )
+    from app.infrastructure.messaging.kafka_consumer_adapter import (
+        KafkaConsumerAdapter,
+    )
+    from app.infrastructure.messaging.kafka_producer_adapter import (
+        KafkaProducerAdapter,
+    )
+    from app.infrastructure.observability.logging import configure_logging
+    from app.infrastructure.repositories.mysql_inbox_repository import (
+        MySQLInboxRepository,
+    )
+    from app.infrastructure.repositories.mysql_outbox_repository import (
+        MySQLOutboxRepository,
+    )
+    from app.infrastructure.repositories.mysql_transaction_repository import (
+        MySQLTransactionRepository,
+    )
+
+    configure_logging()
+
+    topic = os.getenv("KAFKA_TOPIC_RETRY", "transactions.retry.v1")
+    group_id = os.getenv("KAFKA_GROUP_ID", RetryConsumerWorker.DEFAULT_RETRY_GROUP)
+
+    consumer = KafkaConsumerAdapter(topics=[topic], group_id=group_id)
+    producer = KafkaProducerAdapter()
+    risk_client = HttpRiskClientAdapter()
+
+    use_case = ProcessRiskAnalysisUseCase(
+        transaction_repository=MySQLTransactionRepository(None),
+        outbox_repository=MySQLOutboxRepository(None),
+        inbox_repository=MySQLInboxRepository(None),
+        risk_client=risk_client,
+        session_factory=SessionLocal,
+    )
+
+    worker = RetryConsumerWorker(
+        consumer=consumer,
+        producer=producer,
+        process_risk_use_case=use_case,
+        consumer_group=group_id,
+    )
+    worker.start()
+
+
+if __name__ == "__main__":
+    main()
